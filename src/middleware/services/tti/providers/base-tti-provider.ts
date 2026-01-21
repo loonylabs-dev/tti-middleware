@@ -14,6 +14,8 @@ import {
   ModelInfo,
   RetryOptions,
   DEFAULT_RETRY_OPTIONS,
+  LogLevel,
+  LOG_LEVEL_PRIORITY,
 } from '../../../types';
 
 // ============================================================
@@ -101,6 +103,26 @@ export class CapabilityNotSupportedError extends TTIError {
 // ============================================================
 // BASE PROVIDER CLASS
 // ============================================================
+
+/**
+ * Global log level for all providers
+ * Set via TTI_LOG_LEVEL environment variable or setLogLevel()
+ */
+let globalLogLevel: LogLevel = (process.env.TTI_LOG_LEVEL as LogLevel) || 'info';
+
+/**
+ * Set the global log level for all TTI providers
+ */
+export function setLogLevel(level: LogLevel): void {
+  globalLogLevel = level;
+}
+
+/**
+ * Get the current global log level
+ */
+export function getLogLevel(): LogLevel {
+  return globalLogLevel;
+}
 
 export abstract class BaseTTIProvider implements ITTIProvider {
   protected readonly providerName: TTIProvider;
@@ -359,12 +381,21 @@ export abstract class BaseTTIProvider implements ITTIProvider {
 
   /**
    * Log messages with provider context
+   * Respects global log level setting
    */
   protected log(
     level: 'info' | 'warn' | 'error' | 'debug',
     message: string,
     meta?: Record<string, unknown>
   ): void {
+    // Check if we should log this level
+    const currentPriority = LOG_LEVEL_PRIORITY[level];
+    const minPriority = LOG_LEVEL_PRIORITY[globalLogLevel];
+
+    if (currentPriority < minPriority) {
+      return; // Skip logging if below minimum level
+    }
+
     const timestamp = new Date().toISOString();
     const prefix = `[${timestamp}] [${this.providerName.toUpperCase()}] [${level.toUpperCase()}]`;
 

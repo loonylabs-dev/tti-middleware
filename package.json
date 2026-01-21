@@ -1,48 +1,58 @@
 {
   "name": "@loonylabs/tti-middleware",
-  "version": "0.1.0",
-  "description": "Provider-agnostic Text-to-Image middleware for IONOS, Eden AI, Google Vertex AI, and others",
+  "version": "1.0.0",
+  "description": "Provider-agnostic Text-to-Image middleware with GDPR compliance. Supports Google Cloud (Imagen, Gemini), Eden AI, and IONOS.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist",
     "LICENSE",
-    "README.md"
+    "README.md",
+    ".env.example"
   ],
   "scripts": {
     "build": "tsc",
-    "test": "jest",
+    "test": "npm run test:unit",
     "test:unit": "jest --testPathPattern=tests/unit",
     "test:unit:watch": "jest --testPathPattern=tests/unit --watch",
     "test:unit:coverage": "jest --testPathPattern=tests/unit --coverage",
     "test:integration": "cross-env TTI_INTEGRATION_TESTS=true jest --testPathPattern=tests/integration",
     "test:ci": "jest --runInBand --ci --coverage --testPathPattern=tests/unit",
+    "test:live": "TTI_INTEGRATION_TESTS=true jest tests/integration/*.integration.test.ts --testTimeout=120000",
     "test:manual": "ts-node scripts/manual-test-edenai.ts",
     "test:manual:google-cloud": "ts-node scripts/manual-test-google-cloud.ts",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src/**/*.ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "clean": "rm -rf dist coverage",
+    "clean": "node -e \"const fs=require('fs');if(fs.existsSync('dist'))fs.rmSync('dist',{recursive:true})\"",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run test:ci && npm run lint"
+    "prepublishOnly": "npm run clean && npm run build && npm run test"
   },
   "keywords": [
     "tti",
     "text-to-image",
-    "image-to-image",
     "image-generation",
-    "edenai",
-    "ionos",
+    "ai",
     "vertex-ai",
     "google-cloud",
+    "gemini",
     "imagen",
     "middleware",
     "provider-agnostic",
-    "ai-art",
+    "typescript",
     "gdpr",
-    "dsgvo"
+    "dsgvo",
+    "character-consistency"
   ],
-  "author": "LoonyLabs Team",
+  "author": "loonylabs-dev",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loonylabs-dev/tti-middleware.git"
+  },
+  "bugs": {
+    "url": "https://github.com/loonylabs-dev/tti-middleware/issues"
+  },
+  "homepage": "https://github.com/loonylabs-dev/tti-middleware#readme",
   "peerDependencies": {
     "@google-cloud/aiplatform": ">=3.0.0",
     "@google/genai": ">=0.14.0"
@@ -73,5 +83,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

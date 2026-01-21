@@ -1,22 +1,60 @@
-# @loonylabs/tti-middleware
+<div align="center">
 
-[![npm version](https://img.shields.io/npm/v/@loonylabs/tti-middleware.svg)](https://www.npmjs.com/package/@loonylabs/tti-middleware)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+# TTI Middleware
 
-Provider-agnostic Text-to-Image middleware with **GDPR/DSGVO compliance** and **character consistency** support.
+*Provider-agnostic Text-to-Image middleware with **GDPR compliance** and **character consistency** support. Currently supports Google Cloud (Imagen 3, Gemini Flash Image), Eden AI, and IONOS. Features EU data residency via Vertex AI, automatic region fallback, retry logic, and comprehensive error handling.*
+
+<!-- Horizontal Badge Navigation Bar -->
+[![npm version](https://img.shields.io/npm/v/@loonylabs/tti-middleware.svg?style=for-the-badge&logo=npm&logoColor=white)](https://www.npmjs.com/package/@loonylabs/tti-middleware)
+[![npm downloads](https://img.shields.io/npm/dm/@loonylabs/tti-middleware.svg?style=for-the-badge&logo=npm&logoColor=white)](https://www.npmjs.com/package/@loonylabs/tti-middleware)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3+-blue.svg?style=for-the-badge&logo=typescript&logoColor=white)](#-features)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](#-prerequisites)
+[![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge&logo=opensource&logoColor=white)](#-license)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/loonylabs-dev/tti-middleware)
+
+</div>
+
+<!-- Table of Contents -->
+<details>
+<summary><strong>Table of Contents</strong></summary>
+
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+- [Prerequisites](#-prerequisites)
+- [Configuration](#%EF%B8%8F-configuration)
+- [Providers & Models](#-providers--models)
+- [Character Consistency](#-character-consistency)
+- [GDPR / Compliance](#-gdpr--compliance)
+- [API Reference](#-api-reference)
+- [Advanced Features](#-advanced-features)
+- [Testing](#-testing)
+- [Documentation](#-documentation)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Links](#-links)
+
+</details>
 
 ---
 
-## ✨ Key Features
+## Features
 
-- 🎨 **Multiple Providers**: Google Cloud, Eden AI, IONOS
-- 🖼️ **Character Consistency**: Generate consistent characters across multiple images (perfect for children's book illustrations)
-- 🇪🇺 **GDPR Compliant**: Built-in compliance information with DPA links
-- 📋 **Compliance First**: Check DPA status, data residency, and GDPR compliance per provider
-- 🔄 **Provider-Agnostic**: Unified interface with provider-specific model selection
-- 📦 **TypeScript-First**: Full TypeScript support with comprehensive types
+- **Multi-Provider Architecture**: Unified API for all TTI providers
+  - **Google Cloud** (Recommended): Imagen 3 & Gemini Flash Image with EU data residency
+  - **Eden AI**: Aggregator with access to OpenAI, Stability AI, Replicate (experimental)
+  - **IONOS**: German cloud provider with OpenAI-compatible API (experimental)
+- **Character Consistency**: Generate consistent characters across multiple images (perfect for children's book illustrations)
+- **GDPR/DSGVO Compliance**: Built-in EU region support with automatic fallback
+- **Retry Logic**: Automatic retry for rate limits (429) with configurable backoff
+- **TypeScript First**: Full type safety with comprehensive interfaces
+- **Logging Control**: Configurable log levels via environment or API
+- **Error Handling**: Typed error classes for precise error handling
 
-## 📦 Installation
+## Quick Start
+
+### Installation
+
+Install from npm:
 
 ```bash
 npm install @loonylabs/tti-middleware
@@ -25,34 +63,44 @@ npm install @loonylabs/tti-middleware
 npm install @google-cloud/aiplatform @google/genai
 ```
 
-## 🚀 Quick Start
+Or install directly from GitHub:
 
-### Basic Text-to-Image
+```bash
+npm install github:loonylabs-dev/tti-middleware
+```
+
+### Basic Usage
 
 ```typescript
 import { TTIService, GoogleCloudTTIProvider, TTIProvider } from '@loonylabs/tti-middleware';
 
+// Create service and register provider
 const service = new TTIService();
 service.registerProvider(new GoogleCloudTTIProvider({
   projectId: process.env.GOOGLE_CLOUD_PROJECT,
   region: 'europe-west4', // EU region for GDPR
 }));
 
+// Generate an image
 const result = await service.generate({
   prompt: 'A futuristic city with flying cars, cyberpunk style',
-  model: 'gemini-flash-image',
+  model: 'imagen-3',
 });
 
-console.log('Image:', result.images[0].base64);
+console.log('Image generated:', result.images[0].base64?.substring(0, 50) + '...');
+console.log('Duration:', result.metadata.duration, 'ms');
 ```
 
-### Character Consistency (Children's Book Illustrations)
+<details>
+<summary><strong>Using Character Consistency</strong></summary>
+
+Generate consistent characters across multiple images:
 
 ```typescript
-// 1. Create the character
+// 1. Create the initial character
 const character = await service.generate({
   prompt: 'A cute cartoon bear with a red hat and blue scarf, watercolor style',
-  model: 'gemini-flash-image',
+  model: 'gemini-flash-image', // Only this model supports character consistency!
 });
 
 // 2. Generate new scenes with the same character
@@ -60,123 +108,187 @@ const scene = await service.generate({
   prompt: 'dancing happily in the rain, jumping in puddles',
   model: 'gemini-flash-image',
   referenceImages: [{
-    base64: character.images[0].base64,
+    base64: character.images[0].base64!,
     mimeType: 'image/png',
   }],
   subjectDescription: 'cute cartoon bear with red hat and blue scarf',
 });
 ```
 
-## 🔒 GDPR / DPA Compliance
+**Important:** Character consistency is only supported by `gemini-flash-image` model!
 
-**Note:** Compliance information is provided in documentation only. Please verify with the respective provider before making compliance decisions.
+</details>
 
-### Provider Compliance Overview
+<details>
+<summary><strong>Switching Providers</strong></summary>
 
-| Provider | DPA | GDPR | EU Data Residency | DPA Document |
-|----------|-----|------|-------------------|--------------|
-| **Google Cloud** | ✅ | ✅ | ✅ | [CDPA](https://cloud.google.com/terms/data-processing-addendum) |
-| **Eden AI** | ✅ | ⚠️* | ⚠️* | [Privacy Policy](https://www.edenai.co/privacy-policy) |
-| **IONOS** | ✅ | ✅ | ✅ | [AGB](https://cloud.ionos.de/agb) |
+```typescript
+// Use Google Cloud (recommended for EU)
+const googleResult = await service.generate({
+  prompt: 'A mountain landscape',
+  model: 'imagen-3',
+}, TTIProvider.GOOGLE_CLOUD);
 
-*Eden AI is an aggregator - compliance depends on the underlying provider you select.
+// Use Eden AI (experimental)
+const edenResult = await service.generate({
+  prompt: 'A mountain landscape',
+  model: 'openai', // Uses DALL-E via Eden AI
+}, TTIProvider.EDENAI);
 
-### Google Cloud Data Usage
+// Use IONOS (experimental)
+const ionosResult = await service.generate({
+  prompt: 'A mountain landscape',
+}, TTIProvider.IONOS);
+```
 
-- ✅ Customer data is **NOT used for training** AI models
-- ✅ Data stays in configured region (e.g., `europe-west4`)
-- ✅ Zero data retention option available
-- 📖 [Vertex AI Privacy Whitepaper](https://services.google.com/fh/files/misc/genai_privacy_google_cloud_202308.pdf)
+</details>
 
-## 🧩 Supported Providers & Models
+## Prerequisites
 
-### Google Cloud
+<details>
+<summary><strong>Required Dependencies</strong></summary>
 
-| Model | Character Consistency | EU Regions |
-|-------|----------------------|------------|
-| `imagen-3` (Imagen 3) | ❌ | All EU regions |
-| `gemini-flash-image` (Gemini 2.5 Flash) | ✅ | europe-west1, europe-west4, europe-north1 |
+- **Node.js** 18+
+- **TypeScript** 5.3+
+- **Google Cloud SDK** (optional, for Google Cloud provider)
 
-⚠️ **Important:** `gemini-flash-image` is **NOT available** in `europe-west3` (Frankfurt)!
-
-### Eden AI
-
-| Model | Character Consistency |
-|-------|----------------------|
-| `openai` (DALL-E) | ❌ |
-| `stabilityai` (Stable Diffusion) | ❌ |
-| `replicate` | ❌ |
-
-### IONOS
-
-| Model | Character Consistency |
-|-------|----------------------|
-| `default` | ❌ |
-
-## 🔧 Configuration
-
-### Environment Variables
-
+For Google Cloud provider:
 ```bash
+npm install @google-cloud/aiplatform @google/genai
+```
+
+</details>
+
+## Configuration
+
+<details>
+<summary><strong>Environment Setup</strong></summary>
+
+Create a `.env` file in your project root:
+
+```env
 # Default provider
 TTI_DEFAULT_PROVIDER=google-cloud
 
-# Google Cloud (recommended for EU)
+# Logging level (debug, info, warn, error, silent)
+TTI_LOG_LEVEL=info
+
+# Google Cloud (recommended for EU/GDPR)
 GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_APPLICATION_CREDENTIALS=./service-account.json
 GOOGLE_CLOUD_REGION=europe-west4  # Recommended for Gemini
 
-# Eden AI
+# Eden AI (experimental)
 EDENAI_API_KEY=your-api-key
 
-# IONOS
+# IONOS (experimental)
 IONOS_API_KEY=your-api-key
 IONOS_API_URL=https://api.ionos.cloud/ai/v1
 ```
 
-### Google Cloud Regions
+</details>
+
+## Providers & Models
+
+### Google Cloud (Recommended)
+
+| Model | ID | Character Consistency | EU Regions |
+|-------|-----|----------------------|------------|
+| **Imagen 3** | `imagen-3` | No | All EU regions |
+| **Gemini Flash Image** | `gemini-flash-image` | **Yes** | europe-west1, europe-west4, europe-north1 |
+
+**Important:** `gemini-flash-image` is **NOT available** in `europe-west3` (Frankfurt)!
+
+### Eden AI (Experimental)
+
+| Model | ID | Notes |
+|-------|-----|-------|
+| OpenAI DALL-E | `openai` | Via Eden AI aggregator |
+| Stability AI | `stabilityai` | Via Eden AI aggregator |
+| Replicate | `replicate` | Via Eden AI aggregator |
+
+### IONOS (Experimental)
+
+| Model | ID | Notes |
+|-------|-----|-------|
+| Default | `default` | OpenAI-compatible API |
+
+### Google Cloud Region Availability
 
 | Region | Location | Imagen 3 | Gemini Flash Image |
 |--------|----------|----------|-------------------|
-| `europe-west1` | Belgium | ✅ | ✅ |
-| `europe-west3` | Frankfurt | ✅ | ❌ |
-| `europe-west4` | Netherlands | ✅ | ✅ **Recommended** |
-| `europe-north1` | Finland | ✅ | ✅ |
-| `europe-west9` | Paris | ✅ | ❌ |
+| `europe-west1` | Belgium | Yes | Yes |
+| `europe-west3` | Frankfurt | Yes | **No** |
+| `europe-west4` | Netherlands | Yes | **Yes (Recommended)** |
+| `europe-north1` | Finland | Yes | Yes |
+| `europe-west9` | Paris | Yes | No |
 
-## 🏗️ Architecture
+## Character Consistency
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        TTIService                           │
-│  ┌─────────────────────────────────────────────────────────┤
-│  │  generate()           getProviderCompliance()           │
-│  │  listAllModels()      findProvidersWithCapability()     │
-│  └─────────────────────────────────────────────────────────┤
-└─────────────────────────────────────────────────────────────┘
-                              │
-           ┌──────────────────┼──────────────────┐
-           │                  │                  │
-           ▼                  ▼                  ▼
-    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-    │ GoogleCloud │    │   EdenAI    │    │    IONOS    │
-    │  Provider   │    │  Provider   │    │  Provider   │
-    ├─────────────┤    ├─────────────┤    ├─────────────┤
-    │ Models:     │    │ Models:     │    │ Models:     │
-    │ - imagen-3  │    │ - openai    │    │ - default   │
-    │ - gemini-   │    │ - stability │    │             │
-    │   flash     │    │ - replicate │    │             │
-    └─────────────┘    └─────────────┘    └─────────────┘
-           │                  │                  │
-           ▼                  ▼                  ▼
-    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-    │ Vertex AI   │    │ Eden AI API │    │  IONOS API  │
-    │ (Google     │    │ (Aggregator)│    │ (OpenAI-    │
-    │  Cloud)     │    │             │    │  compatible)│
-    └─────────────┘    └─────────────┘    └─────────────┘
+Generate consistent characters across multiple images - perfect for children's book illustrations:
+
+```typescript
+// Step 1: Create a character
+const bear = await service.generate({
+  prompt: 'A cute cartoon bear with a red hat, watercolor style',
+  model: 'gemini-flash-image',
+});
+
+// Step 2: Use in different scenes
+const scenes = ['playing in the park', 'reading a book', 'eating honey'];
+
+for (const scene of scenes) {
+  const result = await service.generate({
+    prompt: scene,
+    model: 'gemini-flash-image',
+    referenceImages: [{ base64: bear.images[0].base64!, mimeType: 'image/png' }],
+    subjectDescription: 'cute cartoon bear with red hat',
+  });
+  // Save result...
+}
 ```
 
-## 📖 API Reference
+**Requirements:**
+- Model must be `gemini-flash-image`
+- `subjectDescription` is required when using `referenceImages`
+
+## GDPR / Compliance
+
+### Provider Compliance Overview
+
+| Provider | DPA | GDPR | EU Data Residency | Document |
+|----------|-----|------|-------------------|----------|
+| **Google Cloud** | Yes | Yes | Yes | [CDPA](https://cloud.google.com/terms/data-processing-addendum) |
+| **Eden AI** | Yes | Depends* | Depends* | [Privacy Policy](https://www.edenai.co/privacy-policy) |
+| **IONOS** | Yes | Yes | Yes | [AGB](https://cloud.ionos.de/agb) |
+
+*Eden AI is an aggregator - compliance depends on the underlying provider.
+
+### Google Cloud Data Usage
+
+- Customer data is **NOT used for training** AI models
+- Data stays in configured region (e.g., `europe-west4`)
+- Zero data retention option available
+- [Vertex AI Privacy Whitepaper](https://services.google.com/fh/files/misc/genai_privacy_google_cloud_202308.pdf)
+
+<details>
+<summary><strong>Checking EU Region Status</strong></summary>
+
+```typescript
+import { GoogleCloudTTIProvider } from '@loonylabs/tti-middleware';
+
+const provider = new GoogleCloudTTIProvider({
+  projectId: 'my-project',
+  region: 'europe-west4',
+});
+
+console.log('Is EU region:', provider.isEURegion()); // true
+console.log('Current region:', provider.getRegion()); // 'europe-west4'
+```
+
+</details>
+
+## API Reference
 
 ### TTIService
 
@@ -186,7 +298,6 @@ class TTIService {
   generate(request: TTIRequest, provider?: TTIProvider): Promise<TTIResponse>;
   getProvider(name: TTIProvider): BaseTTIProvider | undefined;
   listAllModels(): Array<{ provider: TTIProvider; models: ModelInfo[] }>;
-  findProvidersWithCapability(capability: string): Array<...>;
 }
 ```
 
@@ -210,16 +321,6 @@ interface TTIRequest {
 }
 ```
 
-### RetryOptions
-
-```typescript
-interface RetryOptions {
-  maxRetries?: number;        // Default: 2
-  delayMs?: number;           // Default: 1000
-  incrementalBackoff?: boolean;  // Default: false
-}
-```
-
 ### TTIResponse
 
 ```typescript
@@ -235,7 +336,7 @@ interface TTIResponse {
     imagesGenerated: number;
     modelId: string;
   };
-  billing?: {          // Only if provider returns costs (e.g., Eden AI)
+  billing?: {          // Only if provider returns costs
     cost: number;
     currency: string;
     source: 'provider' | 'estimated';
@@ -243,19 +344,10 @@ interface TTIResponse {
 }
 ```
 
-## 💰 Pricing
+## Advanced Features
 
-This middleware does **not hardcode prices**. Instead:
-
-1. **Usage metrics** are always returned (`imagesGenerated`, `modelId`)
-2. **Actual costs** are passed through when the provider returns them (Eden AI)
-
-For pricing information, see:
-- [Google Cloud Vertex AI Pricing](https://cloud.google.com/vertex-ai/generative-ai/pricing)
-- [Eden AI Pricing](https://www.edenai.co/pricing)
-- [IONOS Pricing](https://cloud.ionos.de/preise)
-
-## 🔄 Retry Logic
+<details>
+<summary><strong>Retry Configuration</strong></summary>
 
 Automatic retry for rate limit errors (429):
 
@@ -290,9 +382,61 @@ const result = await service.generate({
 |--------|---------|-------------|
 | `maxRetries` | 2 | Maximum retry attempts |
 | `delayMs` | 1000 | Base delay between retries (ms) |
-| `incrementalBackoff` | false | If true: delay × attempt number |
+| `incrementalBackoff` | false | If true: delay x attempt number |
 
-## 🧪 Testing
+</details>
+
+<details>
+<summary><strong>Logging Configuration</strong></summary>
+
+Control logging via environment variable or API:
+
+```typescript
+import { setLogLevel } from '@loonylabs/tti-middleware';
+
+// Set log level programmatically
+setLogLevel('warn');  // Only show warnings and errors
+
+// Or via environment variable
+// TTI_LOG_LEVEL=error
+```
+
+Available levels: `debug`, `info`, `warn`, `error`, `silent`
+
+</details>
+
+<details>
+<summary><strong>Error Handling</strong></summary>
+
+Typed error classes for precise error handling:
+
+```typescript
+import {
+  TTIError,
+  InvalidConfigError,
+  QuotaExceededError,
+  ProviderUnavailableError,
+  GenerationFailedError,
+  NetworkError,
+  CapabilityNotSupportedError,
+} from '@loonylabs/tti-middleware';
+
+try {
+  const result = await service.generate({ prompt: 'test' });
+} catch (error) {
+  if (error instanceof QuotaExceededError) {
+    console.log('Rate limit hit, try again later');
+  } else if (error instanceof CapabilityNotSupportedError) {
+    console.log('Model does not support this feature');
+  } else if (error instanceof TTIError) {
+    console.log(`TTI Error [${error.code}]: ${error.message}`);
+  }
+}
+```
+
+</details>
+
+## Testing
 
 ```bash
 # Run all tests
@@ -330,7 +474,7 @@ TTI_INTEGRATION_TESTS=true npm run test:integration
 - `GOOGLE_CLOUD_PROJECT` environment variable
 - `GOOGLE_APPLICATION_CREDENTIALS` pointing to service account JSON
 
-## 📖 Documentation
+## Documentation
 
 - [Getting Started](docs/getting-started.md) - Detailed setup guide
 - [Google Cloud Provider](docs/providers/google-cloud.md) - Imagen 3 & Gemini Flash Image
@@ -338,10 +482,37 @@ TTI_INTEGRATION_TESTS=true npm run test:integration
 - [Testing Guide](docs/testing.md) - Unit & integration tests
 - [CHANGELOG](CHANGELOG.md) - Release notes
 
-## 📄 License
+## Contributing
 
-MIT License - see [LICENSE](LICENSE) for details.
+We welcome contributions! Please ensure:
+
+1. **Tests:** Add tests for new features
+2. **Linting:** Run `npm run lint` before committing
+3. **Conventions:** Follow the existing project structure
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Links
+
+- [Documentation](https://github.com/loonylabs-dev/tti-middleware/docs)
+- [Issues](https://github.com/loonylabs-dev/tti-middleware/issues)
+- [NPM Package](https://www.npmjs.com/package/@loonylabs/tti-middleware)
 
 ---
 
-Made with ❤️ by the LoonyLabs Team
+<div align="center">
+
+**Made with care by the LoonyLabs Team**
+
+[![GitHub stars](https://img.shields.io/github/stars/loonylabs-dev/tti-middleware?style=social)](https://github.com/loonylabs-dev/tti-middleware/stargazers)
+[![Follow on GitHub](https://img.shields.io/github/followers/loonylabs-dev?style=social&label=Follow)](https://github.com/loonylabs-dev)
+
+</div>

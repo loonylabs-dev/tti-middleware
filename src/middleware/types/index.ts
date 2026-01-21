@@ -7,13 +7,33 @@
  * Each provider represents a single backend/contract partner with one DPA
  */
 export enum TTIProvider {
-  /** Google Cloud Platform (Vertex AI) - includes Imagen and Gemini models */
+  /** Google Cloud Platform (Vertex AI) - includes Imagen and Gemini models. RECOMMENDED for EU/GDPR. */
   GOOGLE_CLOUD = 'google-cloud',
-  /** Eden AI - aggregator with multiple underlying models */
+  /** Eden AI - aggregator with multiple underlying models. EXPERIMENTAL - limited testing. */
   EDENAI = 'edenai',
-  /** IONOS Cloud */
+  /** IONOS Cloud. EXPERIMENTAL - limited testing. */
   IONOS = 'ionos',
 }
+
+// ============================================================
+// LOGGING CONFIGURATION
+// ============================================================
+
+/**
+ * Log levels for provider logging
+ */
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
+
+/**
+ * Log level priority (higher = more severe)
+ */
+export const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+  silent: 4,
+};
 
 // ============================================================
 // MODEL CAPABILITIES
@@ -266,54 +286,3 @@ export interface ITTIProvider {
   generate(request: TTIRequest): Promise<TTIResponse>;
 }
 
-// ============================================================
-// LEGACY TYPES (deprecated, for backwards compatibility)
-// ============================================================
-
-/**
- * @deprecated Use GoogleCloudRegion instead
- */
-export type VertexAIRegion = GoogleCloudRegion;
-
-/**
- * @deprecated Use TTIRequest with model selection instead
- */
-export interface TTIGenerateRequest {
-  prompt: string;
-  n?: number;
-  size?: string;
-  responseFormat?: 'url' | 'b64_json';
-  providerOptions?: Record<string, unknown>;
-}
-
-/**
- * @deprecated Use TTIRequest with referenceImages instead
- */
-export interface TTIGenerateWithReferenceRequest extends TTIGenerateRequest {
-  referenceImages: TTIReferenceImage[];
-  referenceStrength?: number;
-  subjectDescription: string;
-  subjectType?: 'animal' | 'person' | 'product' | 'default';
-}
-
-/**
- * @deprecated Use provider-specific config in constructor instead
- */
-export interface VertexAIProviderOptions {
-  projectId?: string;
-  region?: GoogleCloudRegion;
-  model?: string;
-  seed?: number;
-  aspectRatio?: string;
-  safetyFilterLevel?: 'block_low_and_above' | 'block_medium_and_above' | 'block_only_high';
-  personGeneration?: 'allow_adult' | 'allow_all' | 'dont_allow';
-}
-
-/**
- * @deprecated Use provider-specific config in constructor instead
- */
-export interface GeminiProviderOptions {
-  aspectRatio?: string;
-  temperature?: number;
-  model?: string;
-}

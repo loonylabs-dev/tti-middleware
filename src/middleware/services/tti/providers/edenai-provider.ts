@@ -16,7 +16,7 @@ import {
   TTIUsage,
   ModelInfo,
 } from '../../../types';
-import { BaseTTIProvider, InvalidConfigError } from './base-tti-provider';
+import { BaseTTIProvider, InvalidConfigError, GenerationFailedError } from './base-tti-provider';
 
 // ============================================================
 // CONFIGURATION
@@ -208,11 +208,17 @@ export class EdenAIProvider extends BaseTTIProvider {
         'error',
         `Provider data not found for ${provider}. Available keys: ${responseKeys.join(', ')}`
       );
-      throw new Error(`No data returned for provider: ${provider}`);
+      throw new GenerationFailedError(
+        this.providerName,
+        `No data returned for provider: ${provider}`
+      );
     }
 
     if (providerData.status === 'fail' || providerData.error) {
-      throw new Error(providerData.error || 'Unknown error from provider');
+      throw new GenerationFailedError(
+        this.providerName,
+        providerData.error || 'Unknown error from provider'
+      );
     }
 
     const items = providerData.items || [];
@@ -227,7 +233,10 @@ export class EdenAIProvider extends BaseTTIProvider {
     }
 
     if (images.length === 0) {
-      throw new Error('No images returned in response');
+      throw new GenerationFailedError(
+        this.providerName,
+        'No images returned in response'
+      );
     }
 
     const usage: TTIUsage = {

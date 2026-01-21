@@ -14,7 +14,7 @@ import {
   TTIUsage,
   ModelInfo,
 } from '../../../types';
-import { BaseTTIProvider, InvalidConfigError } from './base-tti-provider';
+import { BaseTTIProvider, InvalidConfigError, GenerationFailedError } from './base-tti-provider';
 
 // ============================================================
 // CONFIGURATION
@@ -167,7 +167,10 @@ export class IonosProvider extends BaseTTIProvider {
     duration: number
   ): TTIResponse {
     if (!data.data || data.data.length === 0) {
-      throw new Error('No images returned in response');
+      throw new GenerationFailedError(
+        this.providerName,
+        'No images returned in response'
+      );
     }
 
     const images: TTIImage[] = data.data.map((item) => {
