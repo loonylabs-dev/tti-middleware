@@ -84,7 +84,9 @@ const contentType = result.images[0].contentType; // 'image/png'
 
 ### Character Consistency
 
-Perfect for children's book illustrations:
+Perfect for children's book illustrations. Two modes available:
+
+#### Structured Mode (Single Character)
 
 ```typescript
 // 1. Create a character
@@ -102,6 +104,24 @@ const scene = await service.generate({
     mimeType: 'image/png',
   }],
   subjectDescription: 'cute cartoon bear with red hat and blue scarf',
+});
+```
+
+#### Index-Based Mode (Multiple Characters)
+
+Reference multiple characters directly in your prompt:
+
+```typescript
+const duelScene = await service.generate({
+  prompt: `Generate a scene with two characters.
+    - The character on the LEFT should look exactly like the FIRST reference image.
+    - The character on the RIGHT should look exactly like the SECOND reference image.`,
+  model: 'gemini-flash-image',
+  referenceImages: [
+    { base64: cowboy1, mimeType: 'image/png' },
+    { base64: cowboy2, mimeType: 'image/png' },
+  ],
+  // subjectDescription omitted for index-based mode
 });
 ```
 

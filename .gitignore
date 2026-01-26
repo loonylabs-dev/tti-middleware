@@ -27,6 +27,7 @@ service-account*.json
 .vscode/
 .idea/
 .claude/
+CLAUDE.md
 *.swp
 *.swo
 *~

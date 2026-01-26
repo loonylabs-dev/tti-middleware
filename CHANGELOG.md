@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-01-26
+
+### ✨ Added
+
+#### Markdown Debug Logging (TTIDebugger)
+
+New debugging utility that logs all TTI requests and responses to markdown files, similar to the LLM middleware logging system. Perfect for debugging character consistency issues.
+
+**Enable via environment variable:**
+```bash
+DEBUG_TTI_REQUESTS=true
+```
+
+**Or programmatically:**
+```typescript
+import { TTIDebugger } from '@loonylabs/tti-middleware';
+
+TTIDebugger.setEnabled(true);
+TTIDebugger.setLogsDir('/path/to/logs/tti/requests');
+```
+
+**What gets logged:**
+- Full prompt text
+- Subject description (critical for character consistency debugging)
+- Reference image metadata (count, mime types, base64 length)
+- Provider, model, and region
+- Response metadata (duration, image count)
+- Errors with full details
+
+**Log file format:**
+```
+logs/tti/requests/
+└── 2026-01-26T12-34-56-789Z_generate-section-image_char-abc123.md
+```
+
+**Configuration options:**
+```typescript
+TTIDebugger.configure({
+  enabled: true,                    // Enable/disable logging
+  logsDir: './logs/tti/requests',   // Custom log directory
+  consoleLog: true,                 // Also log to console
+  includeBase64: false,             // Include full base64 in logs (default: false)
+});
+```
+
+#### Index-Based Character Referencing (Multi-Character Support)
+
+New mode for character consistency that allows referencing multiple distinct characters in a single scene by their position in the `referenceImages` array.
+
+**Before (Structured Mode - still supported):**
+```typescript
+// Single character with subjectDescription
+await service.generate({
+  prompt: 'dancing in the rain',
+  model: 'gemini-flash-image',
+  referenceImages: [{ base64: bearImage }],
+  subjectDescription: 'cute cartoon bear',  // Required
+});
+```
+
+**New (Index-Based Mode):**
+```typescript
+// Multiple characters referenced by position
+await service.generate({
+  prompt: `The character on the LEFT should look like the FIRST reference image.
+           The character on the RIGHT should look like the SECOND reference image.`,
+  model: 'gemini-flash-image',
+  referenceImages: [
+    { base64: cowboy1, mimeType: 'image/png' },
+    { base64: cowboy2, mimeType: 'image/png' },
+  ],
+  // subjectDescription omitted = Index-Based Mode
+});
+```
+
+**Mode Comparison:**
+
+| Feature | Structured Mode | Index-Based Mode |
+|---------|-----------------|------------------|
+| `subjectDescription` | Required | Omitted |
+| Best for | Single character across scenes | Multiple characters in one scene |
+| Reference style | Auto-generated template | Manual in prompt |
+
+### 🔧 Changed
+
+- **Validation relaxed**: `subjectDescription` is now optional when using `referenceImages`
+- Previous behavior (requiring `subjectDescription`) still works unchanged
+
+### 📝 Documentation
+
+- Updated README with both character consistency modes
+- Updated `docs/getting-started.md` with index-based mode examples
+- Updated `docs/providers/google-cloud.md` with detailed mode comparison
+- Updated `CLAUDE.md` for AI assistants
+
+### 🧪 Tests
+
+- Updated unit tests to reflect new validation behavior
+- Added test for index-based mode validation
+
+---
+
+## [1.0.0] - 2026-01-21
+
+First stable release. No changes from 0.1.0.
+
+---
+
 ## [0.1.0] - 2026-01-21
 
 ### 🚀 Initial Release

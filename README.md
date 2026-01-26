@@ -48,6 +48,7 @@
 - **Retry Logic**: Automatic retry for rate limits (429) with configurable backoff
 - **TypeScript First**: Full type safety with comprehensive interfaces
 - **Logging Control**: Configurable log levels via environment or API
+- **Debug Logging**: Markdown file logging for debugging prompts and responses
 - **Error Handling**: Typed error classes for precise error handling
 
 ## Quick Start
@@ -103,7 +104,7 @@ const character = await service.generate({
   model: 'gemini-flash-image', // Only this model supports character consistency!
 });
 
-// 2. Generate new scenes with the same character
+// 2. Generate new scenes with the same character (Structured Mode)
 const scene = await service.generate({
   prompt: 'dancing happily in the rain, jumping in puddles',
   model: 'gemini-flash-image',
@@ -112,6 +113,17 @@ const scene = await service.generate({
     mimeType: 'image/png',
   }],
   subjectDescription: 'cute cartoon bear with red hat and blue scarf',
+});
+
+// 3. Or use Index-Based Mode for multiple characters
+const multiCharScene = await service.generate({
+  prompt: 'The FIRST reference image character meets the SECOND reference image character',
+  model: 'gemini-flash-image',
+  referenceImages: [
+    { base64: character1.images[0].base64!, mimeType: 'image/png' },
+    { base64: character2.images[0].base64!, mimeType: 'image/png' },
+  ],
+  // subjectDescription omitted = Index-Based Mode
 });
 ```
 
@@ -225,7 +237,11 @@ IONOS_API_URL=https://api.ionos.cloud/ai/v1
 
 ## Character Consistency
 
-Generate consistent characters across multiple images - perfect for children's book illustrations:
+Generate consistent characters across multiple images - perfect for children's book illustrations.
+
+### Mode 1: Structured Mode (Single Character)
+
+Best for scenes with a single consistent character:
 
 ```typescript
 // Step 1: Create a character
@@ -242,15 +258,47 @@ for (const scene of scenes) {
     prompt: scene,
     model: 'gemini-flash-image',
     referenceImages: [{ base64: bear.images[0].base64!, mimeType: 'image/png' }],
-    subjectDescription: 'cute cartoon bear with red hat',
+    subjectDescription: 'cute cartoon bear with red hat',  // Required in structured mode
   });
   // Save result...
 }
 ```
 
-**Requirements:**
-- Model must be `gemini-flash-image`
-- `subjectDescription` is required when using `referenceImages`
+### Mode 2: Index-Based Mode (Multiple Characters)
+
+Best for scenes with multiple distinct characters. Reference images directly in your prompt by their position:
+
+```typescript
+// Load two different character references
+const cowboy1 = await loadImage('cowboy1.png');
+const cowboy2 = await loadImage('cowboy2.png');
+
+// Reference each image by index in the prompt
+const duelScene = await service.generate({
+  prompt: `Generate a cinematic wide shot of a western duel.
+    - The character on the LEFT should look exactly like the person in the FIRST reference image.
+    - The character on the RIGHT should look exactly like the person in the SECOND reference image.
+    They are standing in a dusty street at high noon.`,
+  model: 'gemini-flash-image',
+  referenceImages: [
+    { base64: cowboy1, mimeType: 'image/png' },
+    { base64: cowboy2, mimeType: 'image/png' },
+  ],
+  // subjectDescription intentionally omitted for index-based mode
+  aspectRatio: '16:9',
+});
+```
+
+**Reference keywords:** Use "FIRST reference image", "SECOND reference image" or "Image 1", "Image 2" etc.
+
+### Requirements
+
+| Mode | `subjectDescription` | Use Case |
+|------|---------------------|----------|
+| **Structured** | Required | Single character across scenes |
+| **Index-Based** | Omitted | Multiple characters in one scene |
+
+- Model must be `gemini-flash-image` (only model supporting character consistency)
 
 ## GDPR / Compliance
 
@@ -402,6 +450,42 @@ setLogLevel('warn');  // Only show warnings and errors
 ```
 
 Available levels: `debug`, `info`, `warn`, `error`, `silent`
+
+</details>
+
+<details>
+<summary><strong>Debug Logging (Markdown Files)</strong></summary>
+
+Log all TTI requests and responses to markdown files for debugging:
+
+```typescript
+import { TTIDebugger } from '@loonylabs/tti-middleware';
+
+// Enable via environment variable
+// DEBUG_TTI_REQUESTS=true
+
+// Or programmatically
+TTIDebugger.setEnabled(true);
+TTIDebugger.setLogsDir('./logs/tti/requests');
+
+// Configure all options at once
+TTIDebugger.configure({
+  enabled: true,
+  logsDir: './logs/tti/requests',
+  consoleLog: true,      // Also log to console
+  includeBase64: false,  // Exclude base64 data (default)
+});
+```
+
+**Log file contents:**
+- Provider, model, and region
+- Full prompt text
+- Subject description (for character consistency)
+- Reference image metadata
+- Response data (duration, image count)
+- Errors with full details
+
+**Use case:** Debug why character consistency isn't working by inspecting exactly what prompt and `subjectDescription` are being sent to the API.
 
 </details>
 

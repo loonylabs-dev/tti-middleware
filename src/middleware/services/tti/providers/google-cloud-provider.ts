@@ -28,6 +28,7 @@ import {
   hasReferenceImages,
   isEURegion,
 } from './base-tti-provider';
+import { TTIDebugger, TTIDebugInfo } from '../utils/debug-tti.utils';
 
 // ============================================================
 // CONFIGURATION
@@ -186,28 +187,60 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
     // Validate region availability
     const effectiveRegion = this.getEffectiveRegion(modelId);
 
+    // Create debug info for logging
+    let debugInfo: TTIDebugInfo | null = null;
+    if (TTIDebugger.isEnabled) {
+      debugInfo = TTIDebugger.createDebugInfo(
+        request,
+        this.providerName,
+        modelId,
+        { region: effectiveRegion }
+      );
+      await TTIDebugger.logRequest(debugInfo);
+    }
+
     this.log('debug', 'Generating image', {
       model: modelId,
       region: effectiveRegion,
       hasReferenceImages: hasReferenceImages(request),
     });
 
-    // Route to appropriate implementation with retry support
-    switch (modelId) {
-      case 'imagen-3':
-        return this.executeWithRetry(
-          request,
-          () => this.generateWithImagen(request, effectiveRegion),
-          'Imagen API call'
-        );
-      case 'gemini-flash-image':
-        return this.executeWithRetry(
-          request,
-          () => this.generateWithGemini(request, effectiveRegion),
-          'Gemini API call'
-        );
-      default:
-        throw new InvalidConfigError(this.providerName, `Unknown model: ${modelId}`);
+    try {
+      // Route to appropriate implementation with retry support
+      let response: TTIResponse;
+      switch (modelId) {
+        case 'imagen-3':
+          response = await this.executeWithRetry(
+            request,
+            () => this.generateWithImagen(request, effectiveRegion),
+            'Imagen API call'
+          );
+          break;
+        case 'gemini-flash-image':
+          response = await this.executeWithRetry(
+            request,
+            () => this.generateWithGemini(request, effectiveRegion),
+            'Gemini API call'
+          );
+          break;
+        default:
+          throw new InvalidConfigError(this.providerName, `Unknown model: ${modelId}`);
+      }
+
+      // Log successful response
+      if (debugInfo) {
+        debugInfo = TTIDebugger.updateWithResponse(debugInfo, response);
+        await TTIDebugger.logResponse(debugInfo);
+      }
+
+      return response;
+    } catch (error) {
+      // Log error
+      if (debugInfo) {
+        debugInfo = TTIDebugger.updateWithError(debugInfo, error as Error);
+        await TTIDebugger.logError(debugInfo);
+      }
+      throw error;
     }
   }
 
@@ -479,13 +512,19 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
           });
         }
 
-        // Build character consistency prompt
-        const fullPrompt = this.buildCharacterConsistencyPrompt(
-          request.prompt,
-          request.subjectDescription!,
-          request.referenceImages!.length
-        );
-        parts.push({ text: fullPrompt });
+        // Build character consistency prompt if subject description is provided
+        if (request.subjectDescription) {
+          const fullPrompt = this.buildCharacterConsistencyPrompt(
+            request.prompt,
+            request.subjectDescription,
+            request.referenceImages!.length
+          );
+          parts.push({ text: fullPrompt });
+        } else {
+          // No subject description - treat as raw multimodal prompt
+          // This allows "image 1", "image 2" style prompting
+          parts.push({ text: request.prompt });
+        }
       } else {
         parts.push({ text: request.prompt });
       }

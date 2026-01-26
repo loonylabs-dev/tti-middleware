@@ -189,12 +189,14 @@ export abstract class BaseTTIProvider implements ITTIProvider {
       }
 
       // Validate subject description is provided
-      if (!request.subjectDescription || request.subjectDescription.trim().length === 0) {
-        throw new InvalidConfigError(
-          this.providerName,
-          'subjectDescription is required when using referenceImages'
-        );
-      }
+      // RELAXED: We now allow missing subjectDescription to support raw multimodal prompting
+      // where the user references images directly in the prompt (e.g., "Image 1 is X...").
+      // if (!request.subjectDescription || request.subjectDescription.trim().length === 0) {
+      //   throw new InvalidConfigError(
+      //     this.providerName,
+      //     'subjectDescription is required when using referenceImages'
+      //   );
+      // }
 
       // Validate reference images have data
       for (let i = 0; i < request.referenceImages.length; i++) {

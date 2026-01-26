@@ -118,7 +118,11 @@ console.log(result.metadata.region); // 'europe-west1'
 
 ## Character Consistency
 
-### Basic Usage
+Two modes are available for character consistency:
+
+### Mode 1: Structured Mode (Single Character)
+
+Best for maintaining a single character across multiple scenes. Provide `subjectDescription` to use this mode.
 
 ```typescript
 // Step 1: Create a character
@@ -135,7 +139,7 @@ const scene1 = await service.generate({
     base64: bear.images[0].base64,
     mimeType: 'image/png',
   }],
-  subjectDescription: 'cute cartoon bear with red hat and blue scarf',
+  subjectDescription: 'cute cartoon bear with red hat and blue scarf',  // Required for structured mode
 });
 
 const scene2 = await service.generate({
@@ -149,12 +153,49 @@ const scene2 = await service.generate({
 });
 ```
 
+### Mode 2: Index-Based Mode (Multiple Characters)
+
+Best for scenes with multiple distinct characters. Omit `subjectDescription` and reference images directly in your prompt by their position.
+
+```typescript
+// Load two different character references
+const cowboy1Base64 = /* ... */;
+const cowboy2Base64 = /* ... */;
+
+// Reference each image by index in the prompt
+const duelScene = await service.generate({
+  prompt: `Generate a cinematic wide shot of a western duel.
+    - The character on the LEFT should look exactly like the person in the FIRST reference image.
+    - The character on the RIGHT should look exactly like the person in the SECOND reference image.
+    They are standing in a dusty street at high noon.`,
+  model: 'gemini-flash-image',
+  referenceImages: [
+    { base64: cowboy1Base64, mimeType: 'image/png' },
+    { base64: cowboy2Base64, mimeType: 'image/png' },
+  ],
+  // subjectDescription intentionally omitted for index-based mode
+  aspectRatio: '16:9',
+});
+```
+
+**Reference keywords:** Use "FIRST reference image", "SECOND reference image" or "Image 1", "Image 2" in your prompt.
+
+### Mode Comparison
+
+| Feature | Structured Mode | Index-Based Mode |
+|---------|-----------------|------------------|
+| `subjectDescription` | Required | Omitted |
+| Best for | Single character | Multiple characters |
+| Reference style | Auto-generated template | Manual in prompt |
+| Example use case | Children's book character | Multi-character scene |
+
 ### Best Practices
 
-1. **Detailed subject description**: Include distinctive features (colors, accessories, style)
-2. **Consistent style**: Keep the art style consistent in your prompts
-3. **Clear reference image**: Use a clear, simple pose for the reference
-4. **Action in new scenes**: Describe what the character is *doing*, not what it *looks like*
+1. **Detailed subject description** (structured mode): Include distinctive features (colors, accessories, style)
+2. **Clear reference keywords** (index-based mode): Use "FIRST", "SECOND" or "Image 1", "Image 2"
+3. **Consistent style**: Keep the art style consistent in your prompts
+4. **Clear reference image**: Use a clear, simple pose for the reference
+5. **Action in new scenes**: Describe what the character is *doing*, not what it *looks like*
 
 ## Provider-Specific Options
 

@@ -326,15 +326,17 @@ describe('BaseTTIProvider', () => {
       }).not.toThrow();
     });
 
-    it('should throw when referenceImages provided without subjectDescription', () => {
+    it('should allow referenceImages without subjectDescription (raw multimodal mode)', () => {
+      // Since the validation was relaxed to support index-based referencing,
+      // referenceImages without subjectDescription is now valid.
       expect(() => {
         provider.testValidateRequest({
-          prompt: 'test',
+          prompt: 'Generate with FIRST reference image on left, SECOND on right',
           model: 'test-model-cc',
-          referenceImages: [{ base64: 'data' }],
-          // Missing subjectDescription
+          referenceImages: [{ base64: 'data1' }, { base64: 'data2' }],
+          // subjectDescription intentionally omitted for raw multimodal mode
         });
-      }).toThrow(InvalidConfigError);
+      }).not.toThrow();
     });
 
     it('should throw when referenceImage has empty base64', () => {
