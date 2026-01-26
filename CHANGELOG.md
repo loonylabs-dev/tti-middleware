@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.1] - 2026-01-26
+
+### Added
+
+#### Dry Mode for Development & Debugging
+
+New `dry` flag in `TTIRequest` to skip actual API calls while still validating requests and logging to the debug files. Perfect for development and debugging without incurring API costs.
+
+**Usage:**
+```typescript
+// Dry mode - no API call, no cost
+const result = await service.generate({
+  prompt: 'A beautiful sunset over mountains',
+  model: 'gemini-flash-image',
+  dry: true,  // Skip API call
+});
+
+// Returns placeholder response:
+// {
+//   images: [{ base64: '...white 1024x1024 PNG...', contentType: 'image/png' }],
+//   metadata: { provider: 'google-cloud', model: 'gemini-flash-image', duration: 0 },
+//   usage: { imagesGenerated: 1, modelId: 'gemini-flash-image' }
+// }
+```
+
+**What happens in dry mode:**
+- Request is fully validated (prompt, model, capabilities, reference images)
+- Request is logged via TTIDebugger (if enabled with `DEBUG_TTI_REQUESTS=true`)
+- No actual API call is made
+- Returns placeholder images (white 1024x1024 PNG) - respects `n` parameter for multiple images
+
+**Use cases:**
+- Developing prompt templates without API costs
+- Testing request validation logic
+- Debugging TTIDebugger log output
+- CI/CD pipeline validation
+
+#### Multi-Reference Test Script (4 Images)
+
+New test script for validating multi-reference scenarios with 4 different subjects:
+
+```bash
+# Generate base images (cowboys, house, horse) + run tests
+npx ts-node scripts/manual-test-multi-reference-4-images.ts
+
+# Only generate base images
+npx ts-node scripts/manual-test-multi-reference-4-images.ts --generate-base
+
+# Only run combination tests (requires existing images)
+npx ts-node scripts/manual-test-multi-reference-4-images.ts --test-only
+```
+
+The script compares Raw Mode (index-based, no subjectDescription) vs Template Mode (with subjectDescription) for complex multi-subject scenes.
+
+### Changed
+
+#### Template Wording: "character" → "subject"
+
+The internal character consistency prompt template now uses "subject" instead of "character" for broader applicability. This allows the structured mode to work better with non-character references (objects, buildings, animals, etc.).
+
+**Before:**
+```
+Using the reference image as a reference for the character "cute bear"...
+```
+
+**After:**
+```
+Using the reference image as a reference for the subject "cute bear"...
+```
+
+This is a minor wording change that improves results when using reference images for non-character subjects like houses, vehicles, or other objects.
+
+#### Internal: Provider Architecture Refactoring
+
+Refactored `BaseTTIProvider` to support centralized dry mode handling:
+- `generate()` is now a concrete method in `BaseTTIProvider` (handles validation + dry mode)
+- New `doGenerate()` abstract method for provider-specific API calls
+- All providers (GoogleCloud, EdenAI, IONOS) updated to implement `doGenerate()`
+- **No breaking changes** - external API remains unchanged
+
+---
+
 ## [1.1.0] - 2026-01-26
 
 ### ✨ Added

@@ -97,8 +97,8 @@ export class IonosProvider extends BaseTTIProvider {
     return 'default';
   }
 
-  async generate(request: TTIRequest): Promise<TTIResponse> {
-    this.validateRequest(request);
+  protected async doGenerate(request: TTIRequest): Promise<TTIResponse> {
+    // Note: validateRequest() is called by BaseTTIProvider.generate()
 
     return this.executeWithRetry(
       request,

@@ -17,6 +17,11 @@ import {
   LogLevel,
   LOG_LEVEL_PRIORITY,
 } from '../../../types';
+import { TTIDebugger, TTIDebugInfo } from '../utils/debug-tti.utils';
+import {
+  DRY_MODE_PLACEHOLDER_IMAGE,
+  DRY_MODE_PLACEHOLDER_MIME_TYPE,
+} from '../assets/placeholder-image';
 
 // ============================================================
 // ERROR CLASSES
@@ -138,7 +143,13 @@ export abstract class BaseTTIProvider implements ITTIProvider {
   abstract getDisplayName(): string;
   abstract listModels(): ModelInfo[];
   abstract getDefaultModel(): string;
-  abstract generate(request: TTIRequest): Promise<TTIResponse>;
+
+  /**
+   * Provider-specific generation implementation.
+   * Called by generate() after validation and dry mode checks.
+   * Subclasses should implement the actual API call logic here.
+   */
+  protected abstract doGenerate(request: TTIRequest): Promise<TTIResponse>;
 
   // ============================================================
   // IMPLEMENTED METHODS
@@ -146,6 +157,86 @@ export abstract class BaseTTIProvider implements ITTIProvider {
 
   public getName(): TTIProvider {
     return this.providerName;
+  }
+
+  /**
+   * Generate images from a request.
+   * This is the main entry point that handles:
+   * - Request validation
+   * - Dry mode (skip API call, return mock response with logging)
+   * - Delegation to provider-specific doGenerate()
+   *
+   * Note: Normal mode logging is handled by each provider in doGenerate()
+   * to support provider-specific metadata (e.g., region for Google Cloud).
+   */
+  public async generate(request: TTIRequest): Promise<TTIResponse> {
+    // 1. Validate the request
+    this.validateRequest(request);
+
+    // 2. Handle dry mode - skip API call, return mock response
+    if (request.dry) {
+      return this.handleDryMode(request);
+    }
+
+    // 3. Execute actual generation via provider-specific implementation
+    // Provider handles its own logging with provider-specific metadata
+    return this.doGenerate(request);
+  }
+
+  /**
+   * Handle dry mode: log request and return mock response without API call.
+   * Useful for development and debugging without incurring API costs.
+   */
+  protected async handleDryMode(request: TTIRequest): Promise<TTIResponse> {
+    const modelId = request.model || this.getDefaultModel();
+
+    this.log('info', 'Dry mode enabled - skipping API call', {
+      model: modelId,
+      provider: this.providerName,
+    });
+
+    // Create debug info for logging (if enabled)
+    let debugInfo: TTIDebugInfo | null = null;
+    if (TTIDebugger.isEnabled) {
+      debugInfo = TTIDebugger.createDebugInfo(request, this.providerName, modelId);
+      await TTIDebugger.logRequest(debugInfo);
+    }
+
+    const dryResponse = this.createDryModeResponse(request, modelId);
+
+    if (debugInfo) {
+      debugInfo = TTIDebugger.updateWithResponse(debugInfo, dryResponse);
+      await TTIDebugger.logResponse(debugInfo);
+    }
+
+    return dryResponse;
+  }
+
+  /**
+   * Create a mock response for dry mode.
+   * Returns placeholder images (white 1024x1024 PNG) with metadata.
+   */
+  protected createDryModeResponse(request: TTIRequest, modelId: string): TTIResponse {
+    const imageCount = request.n || 1;
+
+    // Generate the requested number of placeholder images
+    const images = Array.from({ length: imageCount }, () => ({
+      base64: DRY_MODE_PLACEHOLDER_IMAGE,
+      contentType: DRY_MODE_PLACEHOLDER_MIME_TYPE,
+    }));
+
+    return {
+      images,
+      metadata: {
+        provider: this.providerName,
+        model: modelId,
+        duration: 0,
+      },
+      usage: {
+        imagesGenerated: imageCount,
+        modelId: modelId,
+      },
+    };
   }
 
   /**

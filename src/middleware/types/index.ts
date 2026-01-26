@@ -143,6 +143,18 @@ export interface TTIRequest {
    * Default: true (retry enabled with defaults)
    */
   retry?: boolean | RetryOptions;
+
+  // Development/debugging
+  /**
+   * Dry mode - validate and log request without making actual API calls.
+   * Useful for development and debugging without incurring API costs.
+   * When enabled:
+   * - Request is validated as normal
+   * - Request is logged via TTIDebugger (if enabled)
+   * - A mock response is returned (no actual image generation)
+   * Default: false
+   */
+  dry?: boolean;
 }
 
 /**

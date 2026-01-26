@@ -169,8 +169,8 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
     return 'gemini-flash-image';
   }
 
-  async generate(request: TTIRequest): Promise<TTIResponse> {
-    this.validateRequest(request);
+  protected async doGenerate(request: TTIRequest): Promise<TTIResponse> {
+    // Note: validateRequest() is called by BaseTTIProvider.generate()
 
     const modelId = request.model || this.getDefaultModel();
     const modelInfo = this.getModelInfo(modelId);
@@ -611,9 +611,9 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
     const referenceText =
       referenceCount === 1 ? 'the reference image' : `the ${referenceCount} reference images`;
 
-    return `Using ${referenceText} as a reference for the character "${subjectDescription}", generate a new image where: ${userPrompt}
+    return `Using ${referenceText} as a reference for the subject "${subjectDescription}", generate a new image where: ${userPrompt}
 
-IMPORTANT: Maintain exact visual consistency with the character in the reference - same style, colors, proportions, and distinctive features. The character should be immediately recognizable as the same one from the reference.`;
+IMPORTANT: Maintain exact visual consistency with the subject in the reference - same style, colors, proportions, and distinctive features. The subject should be immediately recognizable as the same one from the reference.`;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

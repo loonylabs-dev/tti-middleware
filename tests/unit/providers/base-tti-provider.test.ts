@@ -82,8 +82,8 @@ class TestTTIProvider extends BaseTTIProvider {
     return 'test-model';
   }
 
-  async generate(request: TTIRequest): Promise<TTIResponse> {
-    this.validateRequest(request);
+  protected async doGenerate(request: TTIRequest): Promise<TTIResponse> {
+    // Note: validateRequest() is called by BaseTTIProvider.generate()
     return this.executeWithRetry(
       request,
       () => this.generateFn(request),
@@ -552,6 +552,153 @@ describe('Retry Logic', () => {
 
       await expect(provider.generate({ prompt: 'test', retry: false })).rejects.toThrow();
       expect(attempts).toBe(1);
+    });
+  });
+});
+
+// ============================================================
+// DRY MODE TESTS
+// ============================================================
+
+describe('Dry Mode', () => {
+  let provider: TestTTIProvider;
+
+  beforeEach(() => {
+    provider = new TestTTIProvider();
+  });
+
+  describe('generate() with dry: true', () => {
+    it('should not call the actual generation function', async () => {
+      let generateCalled = false;
+      provider.generateFn = async () => {
+        generateCalled = true;
+        return {
+          images: [{ base64: 'real-data' }],
+          metadata: { provider: 'test', model: 'test-model', duration: 100 },
+          usage: { imagesGenerated: 1, modelId: 'test-model' },
+        };
+      };
+
+      await provider.generate({ prompt: 'test prompt', dry: true });
+
+      expect(generateCalled).toBe(false);
+    });
+
+    it('should return placeholder image', async () => {
+      const result = await provider.generate({ prompt: 'test prompt', dry: true });
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0].base64).toBeDefined();
+      expect(result.images[0].contentType).toBe('image/png');
+    });
+
+    it('should return metadata with provider and model', async () => {
+      const result = await provider.generate({ prompt: 'test prompt', dry: true });
+
+      expect(result.metadata.provider).toBe(TTIProvider.GOOGLE_CLOUD);
+      expect(result.metadata.model).toBe('test-model');
+      expect(result.metadata.duration).toBe(0);
+    });
+
+    it('should return usage with correct images count', async () => {
+      const result = await provider.generate({ prompt: 'test prompt', dry: true });
+
+      expect(result.usage.imagesGenerated).toBe(1);
+      expect(result.usage.modelId).toBe('test-model');
+    });
+
+    it('should respect n parameter for multiple images', async () => {
+      const result = await provider.generate({ prompt: 'test prompt', n: 3, dry: true });
+
+      expect(result.images).toHaveLength(3);
+      expect(result.usage.imagesGenerated).toBe(3);
+      result.images.forEach((img) => {
+        expect(img.base64).toBeDefined();
+        expect(img.contentType).toBe('image/png');
+      });
+    });
+
+    it('should use specified model in dry mode response', async () => {
+      const result = await provider.generate({
+        prompt: 'test prompt',
+        model: 'test-model-cc',
+        dry: true,
+      });
+
+      expect(result.metadata.model).toBe('test-model-cc');
+      expect(result.usage.modelId).toBe('test-model-cc');
+    });
+
+    it('should still validate the request in dry mode', async () => {
+      await expect(
+        provider.generate({ prompt: '', dry: true })
+      ).rejects.toThrow(InvalidConfigError);
+    });
+
+    it('should validate model capabilities in dry mode', async () => {
+      await expect(
+        provider.generate({
+          prompt: 'test',
+          model: 'test-model', // Does not support character consistency
+          referenceImages: [{ base64: 'data' }],
+          dry: true,
+        })
+      ).rejects.toThrow(CapabilityNotSupportedError);
+    });
+
+    it('should work with referenceImages on supporting model in dry mode', async () => {
+      const result = await provider.generate({
+        prompt: 'test with reference',
+        model: 'test-model-cc',
+        referenceImages: [{ base64: 'ref-data' }],
+        subjectDescription: 'test subject',
+        dry: true,
+      });
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0].contentType).toBe('image/png');
+      expect(result.metadata.model).toBe('test-model-cc');
+    });
+  });
+
+  describe('generate() with dry: false or undefined', () => {
+    it('should call actual generation when dry is false', async () => {
+      let generateCalled = false;
+      provider.generateFn = async () => {
+        generateCalled = true;
+        return {
+          images: [{ base64: 'real-data' }],
+          metadata: { provider: 'test', model: 'test-model', duration: 100 },
+          usage: { imagesGenerated: 1, modelId: 'test-model' },
+        };
+      };
+
+      await provider.generate({ prompt: 'test', dry: false });
+
+      expect(generateCalled).toBe(true);
+    });
+
+    it('should call actual generation when dry is undefined', async () => {
+      let generateCalled = false;
+      provider.generateFn = async () => {
+        generateCalled = true;
+        return {
+          images: [{ base64: 'real-data' }],
+          metadata: { provider: 'test', model: 'test-model', duration: 100 },
+          usage: { imagesGenerated: 1, modelId: 'test-model' },
+        };
+      };
+
+      await provider.generate({ prompt: 'test' });
+
+      expect(generateCalled).toBe(true);
+    });
+
+    it('should return actual images when not in dry mode', async () => {
+      const result = await provider.generate({ prompt: 'test' });
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0].base64).toBe('test-image-data');
     });
   });
 });
