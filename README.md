@@ -45,7 +45,7 @@
   - **IONOS**: German cloud provider with OpenAI-compatible API (experimental)
 - **Character Consistency**: Generate consistent characters across multiple images (perfect for children's book illustrations)
 - **GDPR/DSGVO Compliance**: Built-in EU region support with automatic fallback
-- **Retry Logic**: Automatic retry for rate limits (429) with configurable backoff
+- **Retry Logic**: Exponential backoff with jitter for transient errors (429, 408, 5xx, timeouts)
 - **TypeScript First**: Full type safety with comprehensive interfaces
 - **Logging Control**: Configurable log levels via environment or API
 - **Debug Logging**: Markdown file logging for debugging prompts and responses
@@ -397,10 +397,10 @@ interface TTIResponse {
 <details>
 <summary><strong>Retry Configuration</strong></summary>
 
-Automatic retry for rate limit errors (429):
+Automatic retry with **exponential backoff and jitter** for transient errors (429, 408, 5xx, network timeouts). Follows [Google Cloud best practices](https://cloud.google.com/storage/docs/retry-strategy).
 
 ```typescript
-// Default: 2 retries, 1s delay, no backoff
+// Default: 3 retries, exponential backoff (1s → 2s → 4s), jitter enabled
 const result = await service.generate({
   prompt: 'A sunset over mountains',
   model: 'imagen-3',
@@ -412,9 +412,11 @@ const result = await service.generate({
   prompt: 'A sunset over mountains',
   model: 'imagen-3',
   retry: {
-    maxRetries: 3,
-    delayMs: 2000,
-    incrementalBackoff: true,  // 2s, 4s, 6s...
+    maxRetries: 5,
+    delayMs: 1000,
+    backoffMultiplier: 2.0,  // 1s, 2s, 4s, 8s, 16s
+    maxDelayMs: 30000,       // Cap at 30s
+    jitter: true,            // Randomize to prevent thundering herd
   },
 });
 
@@ -426,11 +428,16 @@ const result = await service.generate({
 });
 ```
 
+**Retryable errors:** 429, 408, 500, 502, 503, 504, timeouts, ECONNRESET, ECONNREFUSED, socket hang up
+**Not retried:** 400, 401, 403, and other client errors
+
 | Option | Default | Description |
 |--------|---------|-------------|
-| `maxRetries` | 2 | Maximum retry attempts |
+| `maxRetries` | 3 | Maximum retry attempts |
 | `delayMs` | 1000 | Base delay between retries (ms) |
-| `incrementalBackoff` | false | If true: delay x attempt number |
+| `backoffMultiplier` | 2.0 | Exponential multiplier per attempt |
+| `maxDelayMs` | 30000 | Maximum delay cap (ms) |
+| `jitter` | true | Randomize delay to prevent thundering herd |
 
 </details>
 

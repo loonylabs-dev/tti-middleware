@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-01-29
+
+### Changed
+
+#### Exponential Backoff with Jitter for Retry Logic
+
+The retry mechanism has been upgraded from simple linear/static retry to **exponential backoff with jitter**, following [Google Cloud best practices](https://cloud.google.com/storage/docs/retry-strategy).
+
+**Before (v1.1.x):**
+- Only retried on 429 (rate limit) errors
+- Static or linear delay (`1s, 2s, 3s...`)
+- No jitter (thundering herd risk)
+- No delay cap
+
+**After (v1.2.0):**
+- Retries on **all transient errors**: 429, 408, 500, 502, 503, 504
+- Retries on **network errors**: timeouts, ECONNRESET, ECONNREFUSED, socket hang up, etc.
+- Does NOT retry on client errors: 400, 401, 403
+- **Exponential backoff**: `1s → 2s → 4s → 8s → 16s...`
+- **Jitter**: randomized delay to prevent thundering herd
+- **Max delay cap**: 30s (configurable)
+
+**New defaults:**
+```typescript
+{
+  maxRetries: 3,        // was 2
+  delayMs: 1000,        // unchanged
+  backoffMultiplier: 2.0, // NEW (was linear)
+  maxDelayMs: 30000,    // NEW
+  jitter: true,         // NEW
+}
+```
+
+**New `RetryOptions` fields:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `maxRetries` | 3 | Maximum retry attempts |
+| `delayMs` | 1000 | Base delay between retries (ms) |
+| `backoffMultiplier` | 2.0 | Exponential multiplier (`delay * multiplier^attempt`) |
+| `maxDelayMs` | 30000 | Maximum delay cap (ms) |
+| `jitter` | true | Randomize delay to prevent thundering herd |
+
+**API compatibility:**
+- `retry: true` / `retry: false` works unchanged
+- `retry: { maxRetries: 5 }` works unchanged (new defaults merge in)
+- `incrementalBackoff` is deprecated but still accepted
+
+---
+
 ## [1.1.1] - 2026-01-26
 
 ### Added

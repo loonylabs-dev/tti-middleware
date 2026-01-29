@@ -104,11 +104,15 @@ class TestTTIProvider extends BaseTTIProvider {
     return this.isRateLimitError(error);
   }
 
+  public testIsRetryableError(error: Error): boolean {
+    return this.isRetryableError(error);
+  }
+
   public testResolveRetryConfig(request: TTIRequest) {
     return this.resolveRetryConfig(request);
   }
 
-  public testCalculateRetryDelay(attempt: number, config: Required<typeof DEFAULT_RETRY_OPTIONS>) {
+  public testCalculateRetryDelay(attempt: number, config: Required<Omit<import('../../../src/middleware/types').RetryOptions, 'incrementalBackoff'>>) {
     return this.calculateRetryDelay(attempt, config);
   }
 }
@@ -399,7 +403,7 @@ describe('BaseTTIProvider', () => {
     });
   });
 
-  describe('isRateLimitError()', () => {
+  describe('isRateLimitError() (deprecated, delegates to isRetryableError)', () => {
     it('should detect 429 errors', () => {
       expect(provider.testIsRateLimitError(new Error('status 429'))).toBe(true);
     });
@@ -407,21 +411,91 @@ describe('BaseTTIProvider', () => {
     it('should detect rate limit messages', () => {
       expect(provider.testIsRateLimitError(new Error('Rate limit exceeded'))).toBe(true);
     });
+  });
 
-    it('should detect quota exceeded messages', () => {
-      expect(provider.testIsRateLimitError(new Error('Quota exceeded'))).toBe(true);
+  describe('isRetryableError()', () => {
+    // Retryable HTTP status codes
+    it('should retry 429 (rate limit)', () => {
+      expect(provider.testIsRetryableError(new Error('status 429'))).toBe(true);
     });
 
-    it('should detect too many requests messages', () => {
-      expect(provider.testIsRateLimitError(new Error('Too many requests'))).toBe(true);
+    it('should retry 408 (request timeout)', () => {
+      expect(provider.testIsRetryableError(new Error('status 408'))).toBe(true);
     });
 
-    it('should detect resource exhausted messages', () => {
-      expect(provider.testIsRateLimitError(new Error('Resource exhausted'))).toBe(true);
+    it('should retry 500 (internal server error)', () => {
+      expect(provider.testIsRetryableError(new Error('status 500'))).toBe(true);
     });
 
-    it('should not flag other errors', () => {
-      expect(provider.testIsRateLimitError(new Error('Connection failed'))).toBe(false);
+    it('should retry 502 (bad gateway)', () => {
+      expect(provider.testIsRetryableError(new Error('status 502'))).toBe(true);
+    });
+
+    it('should retry 503 (service unavailable)', () => {
+      expect(provider.testIsRetryableError(new Error('status 503'))).toBe(true);
+    });
+
+    it('should retry 504 (gateway timeout)', () => {
+      expect(provider.testIsRetryableError(new Error('status 504'))).toBe(true);
+    });
+
+    // Retryable by description
+    it('should retry "rate limit exceeded"', () => {
+      expect(provider.testIsRetryableError(new Error('Rate limit exceeded'))).toBe(true);
+    });
+
+    it('should retry "quota exceeded"', () => {
+      expect(provider.testIsRetryableError(new Error('Quota exceeded'))).toBe(true);
+    });
+
+    it('should retry "too many requests"', () => {
+      expect(provider.testIsRetryableError(new Error('Too many requests'))).toBe(true);
+    });
+
+    it('should retry "resource exhausted"', () => {
+      expect(provider.testIsRetryableError(new Error('Resource exhausted'))).toBe(true);
+    });
+
+    // Network / timeout errors
+    it('should retry on timeout', () => {
+      expect(provider.testIsRetryableError(new Error('Request timeout'))).toBe(true);
+    });
+
+    it('should retry on ETIMEDOUT', () => {
+      expect(provider.testIsRetryableError(new Error('ETIMEDOUT'))).toBe(true);
+    });
+
+    it('should retry on ECONNRESET', () => {
+      expect(provider.testIsRetryableError(new Error('ECONNRESET'))).toBe(true);
+    });
+
+    it('should retry on ECONNREFUSED', () => {
+      expect(provider.testIsRetryableError(new Error('ECONNREFUSED'))).toBe(true);
+    });
+
+    it('should retry on ECONNABORTED', () => {
+      expect(provider.testIsRetryableError(new Error('ECONNABORTED'))).toBe(true);
+    });
+
+    it('should retry on socket hang up', () => {
+      expect(provider.testIsRetryableError(new Error('socket hang up'))).toBe(true);
+    });
+
+    // Non-retryable
+    it('should NOT retry 401 (unauthorized)', () => {
+      expect(provider.testIsRetryableError(new Error('status 401'))).toBe(false);
+    });
+
+    it('should NOT retry 403 (forbidden)', () => {
+      expect(provider.testIsRetryableError(new Error('status 403'))).toBe(false);
+    });
+
+    it('should NOT retry 400 (bad request)', () => {
+      expect(provider.testIsRetryableError(new Error('status 400'))).toBe(false);
+    });
+
+    it('should NOT retry unknown errors', () => {
+      expect(provider.testIsRetryableError(new Error('Invalid prompt format'))).toBe(false);
     });
   });
 });
@@ -460,31 +534,63 @@ describe('Retry Logic', () => {
       });
       expect(config?.maxRetries).toBe(5);
       expect(config?.delayMs).toBe(DEFAULT_RETRY_OPTIONS.delayMs);
-      expect(config?.incrementalBackoff).toBe(DEFAULT_RETRY_OPTIONS.incrementalBackoff);
+      expect(config?.backoffMultiplier).toBe(DEFAULT_RETRY_OPTIONS.backoffMultiplier);
+      expect(config?.maxDelayMs).toBe(DEFAULT_RETRY_OPTIONS.maxDelayMs);
+      expect(config?.jitter).toBe(DEFAULT_RETRY_OPTIONS.jitter);
     });
 
     it('should handle all custom options', () => {
       const config = provider.testResolveRetryConfig({
         prompt: 'test',
-        retry: { maxRetries: 3, delayMs: 2000, incrementalBackoff: true },
+        retry: { maxRetries: 5, delayMs: 2000, backoffMultiplier: 3.0, maxDelayMs: 60000, jitter: false },
       });
-      expect(config).toEqual({ maxRetries: 3, delayMs: 2000, incrementalBackoff: true });
+      expect(config).toEqual({
+        maxRetries: 5, delayMs: 2000, backoffMultiplier: 3.0, maxDelayMs: 60000, jitter: false,
+      });
+    });
+
+    it('should handle deprecated incrementalBackoff gracefully', () => {
+      const config = provider.testResolveRetryConfig({
+        prompt: 'test',
+        retry: { incrementalBackoff: true },
+      });
+      expect(config?.backoffMultiplier).toBeDefined();
+      expect(config?.maxRetries).toBe(DEFAULT_RETRY_OPTIONS.maxRetries);
     });
   });
 
   describe('calculateRetryDelay()', () => {
-    it('should return static delay when incrementalBackoff is false', () => {
-      const config = { maxRetries: 2, delayMs: 1000, incrementalBackoff: false };
+    const baseConfig = {
+      maxRetries: 3, delayMs: 1000, backoffMultiplier: 2.0, maxDelayMs: 30000, jitter: false,
+    };
+
+    it('should return exponential delays without jitter', () => {
+      expect(provider.testCalculateRetryDelay(1, baseConfig)).toBe(1000);  // 1000 * 2^0
+      expect(provider.testCalculateRetryDelay(2, baseConfig)).toBe(2000);  // 1000 * 2^1
+      expect(provider.testCalculateRetryDelay(3, baseConfig)).toBe(4000);  // 1000 * 2^2
+      expect(provider.testCalculateRetryDelay(4, baseConfig)).toBe(8000);  // 1000 * 2^3
+    });
+
+    it('should cap delay at maxDelayMs', () => {
+      const config = { ...baseConfig, maxDelayMs: 5000 };
+      expect(provider.testCalculateRetryDelay(4, config)).toBe(5000); // 8000 capped to 5000
+    });
+
+    it('should return constant delay with multiplier 1.0', () => {
+      const config = { ...baseConfig, backoffMultiplier: 1.0 };
       expect(provider.testCalculateRetryDelay(1, config)).toBe(1000);
       expect(provider.testCalculateRetryDelay(2, config)).toBe(1000);
       expect(provider.testCalculateRetryDelay(3, config)).toBe(1000);
     });
 
-    it('should return incremental delay when incrementalBackoff is true', () => {
-      const config = { maxRetries: 2, delayMs: 1000, incrementalBackoff: true };
-      expect(provider.testCalculateRetryDelay(1, config)).toBe(1000); // 1 * 1000
-      expect(provider.testCalculateRetryDelay(2, config)).toBe(2000); // 2 * 1000
-      expect(provider.testCalculateRetryDelay(3, config)).toBe(3000); // 3 * 1000
+    it('should apply jitter (delay between 0 and computed)', () => {
+      const config = { ...baseConfig, jitter: true };
+      // Run multiple times — all values should be <= computed delay
+      for (let i = 0; i < 20; i++) {
+        const delay = provider.testCalculateRetryDelay(2, config);
+        expect(delay).toBeGreaterThanOrEqual(0);
+        expect(delay).toBeLessThanOrEqual(2000); // 1000 * 2^1
+      }
     });
   });
 
@@ -517,7 +623,66 @@ describe('Retry Logic', () => {
       expect(result.images).toHaveLength(1);
     });
 
-    it('should not retry on non-rate-limit errors', async () => {
+    it('should retry on 503 server error', async () => {
+      let attempts = 0;
+      provider.generateFn = async () => {
+        attempts++;
+        if (attempts < 2) {
+          throw new Error('503 Service Unavailable');
+        }
+        return {
+          images: [{ base64: 'data' }],
+          metadata: { provider: 'test', model: 'test', duration: 100 },
+          usage: { imagesGenerated: 1, modelId: 'test' },
+        };
+      };
+
+      const result = await provider.generate({
+        prompt: 'test',
+        retry: { maxRetries: 2, delayMs: 10, jitter: false },
+      });
+
+      expect(attempts).toBe(2);
+      expect(result.images).toHaveLength(1);
+    });
+
+    it('should retry on network timeout (ETIMEDOUT)', async () => {
+      let attempts = 0;
+      provider.generateFn = async () => {
+        attempts++;
+        if (attempts < 2) {
+          throw new Error('ETIMEDOUT');
+        }
+        return {
+          images: [{ base64: 'data' }],
+          metadata: { provider: 'test', model: 'test', duration: 100 },
+          usage: { imagesGenerated: 1, modelId: 'test' },
+        };
+      };
+
+      const result = await provider.generate({
+        prompt: 'test',
+        retry: { maxRetries: 2, delayMs: 10, jitter: false },
+      });
+
+      expect(attempts).toBe(2);
+      expect(result.images).toHaveLength(1);
+    });
+
+    it('should not retry on non-retryable errors (401)', async () => {
+      let attempts = 0;
+      provider.generateFn = async () => {
+        attempts++;
+        throw new Error('status 401 Unauthorized');
+      };
+
+      await expect(provider.generate({ prompt: 'test', retry: { maxRetries: 2 } })).rejects.toThrow(
+        '401'
+      );
+      expect(attempts).toBe(1);
+    });
+
+    it('should not retry on non-retryable errors (Invalid prompt)', async () => {
       let attempts = 0;
       provider.generateFn = async () => {
         attempts++;
@@ -538,7 +703,7 @@ describe('Retry Logic', () => {
       };
 
       await expect(
-        provider.generate({ prompt: 'test', retry: { maxRetries: 2, delayMs: 10 } })
+        provider.generate({ prompt: 'test', retry: { maxRetries: 2, delayMs: 10, jitter: false } })
       ).rejects.toThrow('429 Rate limit');
       expect(attempts).toBe(3); // 1 initial + 2 retries
     });
@@ -552,6 +717,83 @@ describe('Retry Logic', () => {
 
       await expect(provider.generate({ prompt: 'test', retry: false })).rejects.toThrow();
       expect(attempts).toBe(1);
+    });
+
+    it('should use exponential backoff delays between retries', async () => {
+      const sleepSpy = jest.spyOn(provider as any, 'sleep').mockResolvedValue(undefined);
+
+      provider.generateFn = async () => {
+        throw new Error('429 Rate limit');
+      };
+
+      await expect(
+        provider.generate({
+          prompt: 'test',
+          retry: { maxRetries: 4, delayMs: 1000, backoffMultiplier: 2.0, maxDelayMs: 30000, jitter: false },
+        })
+      ).rejects.toThrow('429 Rate limit');
+
+      // 4 retries → 4 sleep calls
+      expect(sleepSpy).toHaveBeenCalledTimes(4);
+
+      // Verify exponential delays: 1000, 2000, 4000, 8000
+      expect(sleepSpy).toHaveBeenNthCalledWith(1, 1000); // 1000 * 2^0
+      expect(sleepSpy).toHaveBeenNthCalledWith(2, 2000); // 1000 * 2^1
+      expect(sleepSpy).toHaveBeenNthCalledWith(3, 4000); // 1000 * 2^2
+      expect(sleepSpy).toHaveBeenNthCalledWith(4, 8000); // 1000 * 2^3
+
+      sleepSpy.mockRestore();
+    });
+
+    it('should cap delays at maxDelayMs', async () => {
+      const sleepSpy = jest.spyOn(provider as any, 'sleep').mockResolvedValue(undefined);
+
+      provider.generateFn = async () => {
+        throw new Error('503 Service Unavailable');
+      };
+
+      await expect(
+        provider.generate({
+          prompt: 'test',
+          retry: { maxRetries: 4, delayMs: 1000, backoffMultiplier: 2.0, maxDelayMs: 3000, jitter: false },
+        })
+      ).rejects.toThrow('503');
+
+      // Delays: 1000, 2000, 3000 (capped), 3000 (capped)
+      expect(sleepSpy).toHaveBeenNthCalledWith(1, 1000);
+      expect(sleepSpy).toHaveBeenNthCalledWith(2, 2000);
+      expect(sleepSpy).toHaveBeenNthCalledWith(3, 3000);
+      expect(sleepSpy).toHaveBeenNthCalledWith(4, 3000);
+
+      sleepSpy.mockRestore();
+    });
+
+    it('should apply jitter (delays between 0 and computed max)', async () => {
+      const sleepSpy = jest.spyOn(provider as any, 'sleep').mockResolvedValue(undefined);
+
+      provider.generateFn = async () => {
+        throw new Error('429 Rate limit');
+      };
+
+      await expect(
+        provider.generate({
+          prompt: 'test',
+          retry: { maxRetries: 3, delayMs: 1000, backoffMultiplier: 2.0, maxDelayMs: 30000, jitter: true },
+        })
+      ).rejects.toThrow('429 Rate limit');
+
+      expect(sleepSpy).toHaveBeenCalledTimes(3);
+
+      // With jitter, each delay should be between 0 and the exponential max
+      const delays = sleepSpy.mock.calls.map((call) => call[0] as number);
+      expect(delays[0]).toBeGreaterThanOrEqual(0);
+      expect(delays[0]).toBeLessThanOrEqual(1000);  // max: 1000 * 2^0
+      expect(delays[1]).toBeGreaterThanOrEqual(0);
+      expect(delays[1]).toBeLessThanOrEqual(2000);  // max: 1000 * 2^1
+      expect(delays[2]).toBeGreaterThanOrEqual(0);
+      expect(delays[2]).toBeLessThanOrEqual(4000);  // max: 1000 * 2^2
+
+      sleepSpy.mockRestore();
     });
   });
 });
