@@ -306,10 +306,13 @@ export abstract class BaseTTIProvider implements ITTIProvider {
   // RETRY LOGIC
   // ============================================================
 
+  /** Resolved retry config type (without deprecated fields) */
+  protected static readonly RESOLVED_RETRY_DEFAULTS = DEFAULT_RETRY_OPTIONS;
+
   /**
    * Resolve retry configuration from request
    */
-  protected resolveRetryConfig(request: TTIRequest): Required<RetryOptions> | null {
+  protected resolveRetryConfig(request: TTIRequest): Required<Omit<RetryOptions, 'incrementalBackoff'>> | null {
     const retryOption = request.retry;
 
     // Explicit disable
@@ -322,27 +325,44 @@ export abstract class BaseTTIProvider implements ITTIProvider {
       return { ...DEFAULT_RETRY_OPTIONS };
     }
 
+    // Handle deprecated incrementalBackoff
+    let backoffMultiplier = retryOption.backoffMultiplier ?? DEFAULT_RETRY_OPTIONS.backoffMultiplier;
+    if (retryOption.incrementalBackoff !== undefined && retryOption.backoffMultiplier === undefined) {
+      // Legacy: incrementalBackoff=true mapped to linear scaling (multiplier 1.0)
+      backoffMultiplier = retryOption.incrementalBackoff ? 1.0 : 1.0;
+    }
+
     // Custom configuration: merge with defaults
     return {
       maxRetries: retryOption.maxRetries ?? DEFAULT_RETRY_OPTIONS.maxRetries,
       delayMs: retryOption.delayMs ?? DEFAULT_RETRY_OPTIONS.delayMs,
-      incrementalBackoff: retryOption.incrementalBackoff ?? DEFAULT_RETRY_OPTIONS.incrementalBackoff,
+      backoffMultiplier,
+      maxDelayMs: retryOption.maxDelayMs ?? DEFAULT_RETRY_OPTIONS.maxDelayMs,
+      jitter: retryOption.jitter ?? DEFAULT_RETRY_OPTIONS.jitter,
     };
   }
 
   /**
-   * Calculate delay for a specific retry attempt
+   * Calculate delay for a specific retry attempt using exponential backoff.
+   * Formula: min(delayMs * backoffMultiplier^(attempt-1), maxDelayMs)
+   * With optional jitter: random value between 0 and computed delay.
    */
   protected calculateRetryDelay(
     attempt: number,
-    config: Required<RetryOptions>
+    config: Required<Omit<RetryOptions, 'incrementalBackoff'>>
   ): number {
-    if (config.incrementalBackoff) {
-      // Incremental: 1s, 2s, 3s, ...
-      return config.delayMs * attempt;
+    // Exponential backoff: delayMs * multiplier^(attempt-1)
+    const exponentialDelay = config.delayMs * Math.pow(config.backoffMultiplier, attempt - 1);
+
+    // Cap at maxDelayMs
+    const cappedDelay = Math.min(exponentialDelay, config.maxDelayMs);
+
+    // Apply jitter: random value between 0 and cappedDelay
+    if (config.jitter) {
+      return Math.round(Math.random() * cappedDelay);
     }
-    // Static: always same delay
-    return config.delayMs;
+
+    return Math.round(cappedDelay);
   }
 
   /**
@@ -353,7 +373,9 @@ export abstract class BaseTTIProvider implements ITTIProvider {
   }
 
   /**
-   * Execute a generation function with retry logic for rate limits
+   * Execute a generation function with retry logic for transient errors.
+   * Retries on: 429, 408, 5xx, network timeouts, TCP disconnects.
+   * Does NOT retry on: 400, 401, 403, and other client errors.
    */
   protected async executeWithRetry<T>(
     request: TTIRequest,
@@ -376,11 +398,8 @@ export abstract class BaseTTIProvider implements ITTIProvider {
       } catch (error) {
         lastError = error as Error;
 
-        // Check if this is a rate limit error (429)
-        const isRateLimitError = this.isRateLimitError(error as Error);
-
-        // Only retry on rate limit errors
-        if (!isRateLimitError) {
+        // Only retry on retryable errors
+        if (!this.isRetryableError(error as Error)) {
           throw error;
         }
 
@@ -389,8 +408,8 @@ export abstract class BaseTTIProvider implements ITTIProvider {
           const delay = this.calculateRetryDelay(attempt, retryConfig);
           this.log(
             'warn',
-            `Rate limit hit during ${operationName}. Retry ${attempt}/${retryConfig.maxRetries} in ${delay}ms...`,
-            { attempt, maxRetries: retryConfig.maxRetries, delayMs: delay }
+            `Transient error during ${operationName}. Retry ${attempt}/${retryConfig.maxRetries} in ${delay}ms...`,
+            { attempt, maxRetries: retryConfig.maxRetries, delayMs: delay, error: (error as Error).message }
           );
           await this.sleep(delay);
         }
@@ -398,21 +417,79 @@ export abstract class BaseTTIProvider implements ITTIProvider {
     }
 
     // All retries exhausted
+    this.log('error', `All ${retryConfig.maxRetries} retries exhausted for ${operationName}`, {
+      lastError: lastError?.message,
+    });
     throw lastError;
   }
 
   /**
-   * Check if an error is a rate limit error (429)
+   * Check if an error is retryable (transient).
+   * Retryable: 429, 408, 500, 502, 503, 504, network errors, timeouts.
+   * Not retryable: 400, 401, 403, and other client errors.
    */
-  protected isRateLimitError(error: Error): boolean {
+  protected isRetryableError(error: Error): boolean {
     const message = error.message.toLowerCase();
-    return (
+
+    // Non-retryable client errors (check first to avoid false positives)
+    if (
+      message.includes('401') ||
+      message.includes('403') ||
+      message.includes('400') ||
+      message.includes('authentication') ||
+      message.includes('unauthorized') ||
+      message.includes('forbidden')
+    ) {
+      return false;
+    }
+
+    // Retryable HTTP status codes
+    if (
       message.includes('429') ||
+      message.includes('408') ||
+      message.includes('500') ||
+      message.includes('502') ||
+      message.includes('503') ||
+      message.includes('504')
+    ) {
+      return true;
+    }
+
+    // Retryable by error description
+    if (
       message.includes('rate limit') ||
       message.includes('quota exceeded') ||
       message.includes('too many requests') ||
       message.includes('resource exhausted')
-    );
+    ) {
+      return true;
+    }
+
+    // Network / timeout errors
+    if (
+      message.includes('timeout') ||
+      message.includes('etimedout') ||
+      message.includes('esockettimedout') ||
+      message.includes('econnreset') ||
+      message.includes('econnrefused') ||
+      message.includes('enotfound') ||
+      message.includes('econnaborted') ||
+      message.includes('epipe') ||
+      message.includes('ehostunreach') ||
+      message.includes('enetunreach') ||
+      message.includes('socket hang up')
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * @deprecated Use isRetryableError() instead
+   */
+  protected isRateLimitError(error: Error): boolean {
+    return this.isRetryableError(error);
   }
 
   /**

@@ -33,20 +33,28 @@ describe('TTIProvider enum', () => {
 });
 
 describe('DEFAULT_RETRY_OPTIONS', () => {
-  it('should have maxRetries of 2', () => {
-    expect(DEFAULT_RETRY_OPTIONS.maxRetries).toBe(2);
+  it('should have maxRetries of 3', () => {
+    expect(DEFAULT_RETRY_OPTIONS.maxRetries).toBe(3);
   });
 
   it('should have delayMs of 1000', () => {
     expect(DEFAULT_RETRY_OPTIONS.delayMs).toBe(1000);
   });
 
-  it('should have incrementalBackoff as false', () => {
-    expect(DEFAULT_RETRY_OPTIONS.incrementalBackoff).toBe(false);
+  it('should have backoffMultiplier of 2.0', () => {
+    expect(DEFAULT_RETRY_OPTIONS.backoffMultiplier).toBe(2.0);
   });
 
-  it('should be a complete RetryOptions object', () => {
-    const required: Required<RetryOptions> = DEFAULT_RETRY_OPTIONS;
+  it('should have maxDelayMs of 30000', () => {
+    expect(DEFAULT_RETRY_OPTIONS.maxDelayMs).toBe(30000);
+  });
+
+  it('should have jitter enabled by default', () => {
+    expect(DEFAULT_RETRY_OPTIONS.jitter).toBe(true);
+  });
+
+  it('should be a complete RetryOptions object (without deprecated fields)', () => {
+    const required: Required<Omit<RetryOptions, 'incrementalBackoff'>> = DEFAULT_RETRY_OPTIONS;
     expect(required).toBeDefined();
   });
 });
@@ -82,10 +90,22 @@ describe('Type exports', () => {
       retry: {
         maxRetries: 5,
         delayMs: 2000,
-        incrementalBackoff: true,
+        backoffMultiplier: 3.0,
+        maxDelayMs: 60000,
+        jitter: false,
       },
     };
     expect((request.retry as RetryOptions).maxRetries).toBe(5);
+  });
+
+  it('should export TTIRequest with deprecated incrementalBackoff', () => {
+    const request: TTIRequest = {
+      prompt: 'test',
+      retry: {
+        incrementalBackoff: true,
+      },
+    };
+    expect((request.retry as RetryOptions).incrementalBackoff).toBe(true);
   });
 
   it('should export TTIResponse type', () => {

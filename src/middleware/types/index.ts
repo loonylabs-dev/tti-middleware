@@ -241,11 +241,16 @@ export type TTIErrorCode =
 // ============================================================
 
 /**
- * Configuration for retry behavior on rate limits (429 errors)
+ * Configuration for retry behavior on transient errors.
+ *
+ * Retryable errors: 429 (rate limit), 408 (timeout), 5xx (server errors),
+ * network timeouts, and TCP disconnects.
+ *
+ * Non-retryable errors: 400, 401, 403, and other client errors.
  */
 export interface RetryOptions {
   /**
-   * Maximum number of retry attempts (default: 2)
+   * Maximum number of retry attempts (default: 3)
    * Total attempts = 1 (initial) + maxRetries
    */
   maxRetries?: number;
@@ -256,21 +261,41 @@ export interface RetryOptions {
   delayMs?: number;
 
   /**
-   * Use incremental backoff: delay increases by delayMs each retry
-   * false: always wait delayMs (e.g., 1s, 1s, 1s)
-   * true: wait delayMs * attempt (e.g., 1s, 2s, 3s)
-   * Default: false
+   * Backoff multiplier for exponential backoff (default: 2.0)
+   * Delay formula: delayMs * (backoffMultiplier ^ (attempt - 1))
+   * Set to 1.0 for constant delay.
+   */
+  backoffMultiplier?: number;
+
+  /**
+   * Maximum delay in milliseconds (default: 30000)
+   * Caps the computed delay to prevent excessively long waits.
+   */
+  maxDelayMs?: number;
+
+  /**
+   * Enable jitter to randomize delay and prevent thundering herd (default: true)
+   * When enabled, actual delay is randomized between 0 and the computed delay.
+   */
+  jitter?: boolean;
+
+  /**
+   * @deprecated Use `backoffMultiplier` instead. Will be removed in v2.0.
+   * When true, equivalent to backoffMultiplier of 1.0 with linear scaling (delayMs * attempt).
    */
   incrementalBackoff?: boolean;
 }
 
 /**
- * Default retry configuration
+ * Default retry configuration following Google Cloud best practices.
+ * @see https://cloud.google.com/storage/docs/retry-strategy
  */
-export const DEFAULT_RETRY_OPTIONS: Required<RetryOptions> = {
-  maxRetries: 2,
+export const DEFAULT_RETRY_OPTIONS: Required<Omit<RetryOptions, 'incrementalBackoff'>> = {
+  maxRetries: 3,
   delayMs: 1000,
-  incrementalBackoff: false,
+  backoffMultiplier: 2.0,
+  maxDelayMs: 30000,
+  jitter: true,
 };
 
 // ============================================================
