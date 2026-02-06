@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-02-06
+
+### Fixed
+
+#### Aspect Ratio Support for Gemini Flash Image
+
+Fixed a critical bug where the `aspectRatio` parameter was being ignored for `gemini-flash-image` model, always generating 1:1 square images regardless of the requested aspect ratio.
+
+**The Issue:**
+- `aspectRatio` parameter (e.g., `"16:9"`) was not being passed to the Gemini API
+- Only affected `gemini-flash-image` model (Imagen 3 worked correctly)
+- Always resulted in 1024x1024 square images
+
+**The Fix:**
+- Added proper `imageConfig` structure to Gemini API calls
+- Now correctly passes `aspectRatio` in nested `imageConfig` object:
+  ```typescript
+  config: {
+    responseModalities: ['TEXT', 'IMAGE'],
+    imageConfig: {
+      aspectRatio: '16:9'  // Now properly sent to API
+    }
+  }
+  ```
+
+**Supported Aspect Ratios:**
+All standard ratios are now working: `1:1`, `3:2`, `2:3`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9`
+
+**Example:**
+```typescript
+// Now generates actual 16:9 landscape images
+const response = await service.generate({
+  prompt: 'A beautiful sunset over mountains',
+  model: 'gemini-flash-image',
+  aspectRatio: '16:9',  // ✅ Now works!
+});
+```
+
+### Changed
+
+#### Updated @google/genai SDK Dependency
+
+Upgraded `@google/genai` from `^0.14.0` to `^1.40.0` to resolve known `imageConfig` bugs in older SDK versions.
+
+**Breaking Change Note:**
+While this is a major version bump in the peer dependency, no breaking changes were observed in our usage. The minimum peer dependency requirement is now `>=1.40.0`.
+
+**Benefits:**
+- Fixes multiple reported `imageConfig` parameter issues
+- Improved stability and compatibility
+- Better support for image generation features
+
+**Migration:**
+Users should update their `@google/genai` dependency:
+```bash
+npm install @google/genai@^1.40.0
+```
+
+### Added
+
+#### New Test Script
+
+Added `scripts/manual-test-aspect-ratio-16-9.ts` for testing aspect ratio functionality:
+```bash
+npx ts-node scripts/manual-test-aspect-ratio-16-9.ts
+```
+
+The script:
+- Tests 16:9 aspect ratio generation
+- Automatically validates image dimensions
+- Provides detailed logging
+- Saves generated images to `output/` directory
+
+---
+
 ## [1.2.0] - 2026-01-29
 
 ### Changed
