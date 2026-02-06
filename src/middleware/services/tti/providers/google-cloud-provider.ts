@@ -536,6 +536,13 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
         responseModalities: ['TEXT', 'IMAGE'],
       };
 
+      // Add imageConfig with aspectRatio if provided
+      if (request.aspectRatio) {
+        config.imageConfig = {
+          aspectRatio: request.aspectRatio,
+        };
+      }
+
       // Add temperature if provided
       if (request.providerOptions?.temperature !== undefined) {
         config.temperature = request.providerOptions.temperature;
@@ -545,6 +552,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
         model: internalModelId,
         region,
         hasReferenceImages: hasReferenceImages(request),
+        config: JSON.stringify(config, null, 2),
       });
 
       const response = await client.generateContent({
