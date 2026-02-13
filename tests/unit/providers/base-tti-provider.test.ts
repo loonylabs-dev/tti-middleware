@@ -546,6 +546,7 @@ describe('Retry Logic', () => {
       });
       expect(config).toEqual({
         maxRetries: 5, delayMs: 2000, backoffMultiplier: 3.0, maxDelayMs: 60000, jitter: false,
+        timeoutMs: 45000, timeoutRetries: 2,
       });
     });
 
@@ -562,6 +563,7 @@ describe('Retry Logic', () => {
   describe('calculateRetryDelay()', () => {
     const baseConfig = {
       maxRetries: 3, delayMs: 1000, backoffMultiplier: 2.0, maxDelayMs: 30000, jitter: false,
+      timeoutMs: 45000, timeoutRetries: 2,
     };
 
     it('should return exponential delays without jitter', () => {

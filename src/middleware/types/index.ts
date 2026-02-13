@@ -280,6 +280,23 @@ export interface RetryOptions {
   jitter?: boolean;
 
   /**
+   * Timeout per attempt in milliseconds (default: 45000 = 45s).
+   * If the provider SDK call doesn't resolve within this time,
+   * the attempt is aborted and counted as a retryable timeout error.
+   * Set to 0 to disable timeout.
+   */
+  timeoutMs?: number;
+
+  /**
+   * Maximum retries specifically for timeout errors (default: 2).
+   * Timeout retries are tracked independently from other transient errors
+   * (429, 5xx, etc.) which use the general `maxRetries` counter.
+   * This prevents a hung service from burning through all retries with
+   * long waits, while still allowing many retries for quota errors.
+   */
+  timeoutRetries?: number;
+
+  /**
    * @deprecated Use `backoffMultiplier` instead. Will be removed in v2.0.
    * When true, equivalent to backoffMultiplier of 1.0 with linear scaling (delayMs * attempt).
    */
@@ -296,6 +313,8 @@ export const DEFAULT_RETRY_OPTIONS: Required<Omit<RetryOptions, 'incrementalBack
   backoffMultiplier: 2.0,
   maxDelayMs: 30000,
   jitter: true,
+  timeoutMs: 45000,
+  timeoutRetries: 2,
 };
 
 // ============================================================

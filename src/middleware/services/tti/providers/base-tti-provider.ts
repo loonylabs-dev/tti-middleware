@@ -339,6 +339,8 @@ export abstract class BaseTTIProvider implements ITTIProvider {
       backoffMultiplier,
       maxDelayMs: retryOption.maxDelayMs ?? DEFAULT_RETRY_OPTIONS.maxDelayMs,
       jitter: retryOption.jitter ?? DEFAULT_RETRY_OPTIONS.jitter,
+      timeoutMs: retryOption.timeoutMs ?? DEFAULT_RETRY_OPTIONS.timeoutMs,
+      timeoutRetries: retryOption.timeoutRetries ?? DEFAULT_RETRY_OPTIONS.timeoutRetries,
     };
   }
 
@@ -373,9 +375,49 @@ export abstract class BaseTTIProvider implements ITTIProvider {
   }
 
   /**
+   * Wrap an operation with a timeout. If the operation doesn't resolve
+   * within timeoutMs, the returned promise rejects with a timeout error.
+   * The original operation continues running (promises can't be cancelled),
+   * but its result is ignored.
+   */
+  private withTimeout<T>(
+    operation: () => Promise<T>,
+    timeoutMs: number,
+    operationName: string
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`timeout: ${operationName} did not complete within ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      operation()
+        .then((result) => {
+          clearTimeout(timer);
+          resolve(result);
+        })
+        .catch((error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+    });
+  }
+
+  /**
+   * Check if an error is a timeout error (from our withTimeout wrapper).
+   */
+  private isTimeoutError(error: Error): boolean {
+    return error.message.toLowerCase().startsWith('timeout:');
+  }
+
+  /**
    * Execute a generation function with retry logic for transient errors.
    * Retries on: 429, 408, 5xx, network timeouts, TCP disconnects.
    * Does NOT retry on: 400, 401, 403, and other client errors.
+   *
+   * Each attempt is wrapped with a per-attempt timeout (configurable via
+   * retry.timeoutMs, default 45s). Timeout errors have their own retry
+   * counter (timeoutRetries, default 2) independent from the general
+   * maxRetries used for quota/server errors.
    */
   protected async executeWithRetry<T>(
     request: TTIRequest,
@@ -389,36 +431,102 @@ export abstract class BaseTTIProvider implements ITTIProvider {
       return operation();
     }
 
+    const timeoutMs = retryConfig.timeoutMs || 0;
+    const maxTimeoutRetries = retryConfig.timeoutRetries ?? 2;
     let lastError: Error | null = null;
-    const maxAttempts = 1 + retryConfig.maxRetries; // initial + retries
+    let generalRetryCount = 0;
+    let timeoutRetryCount = 0;
+    const maxGeneralRetries = retryConfig.maxRetries;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Total attempt cap to prevent infinite loops
+    const absoluteMaxAttempts = 1 + maxGeneralRetries + maxTimeoutRetries;
+
+    for (let attempt = 1; attempt <= absoluteMaxAttempts; attempt++) {
+      const attemptStart = Date.now();
+
       try {
-        return await operation();
-      } catch (error) {
-        lastError = error as Error;
+        this.log(
+          'info',
+          `${operationName} attempt ${attempt}${timeoutMs ? ` (timeout: ${timeoutMs}ms)` : ''} [retries: general=${generalRetryCount}/${maxGeneralRetries}, timeout=${timeoutRetryCount}/${maxTimeoutRetries}]`,
+          {
+            attempt,
+            timeoutMs: timeoutMs || 'none',
+            generalRetries: `${generalRetryCount}/${maxGeneralRetries}`,
+            timeoutRetries: `${timeoutRetryCount}/${maxTimeoutRetries}`,
+          }
+        );
 
-        // Only retry on retryable errors
-        if (!this.isRetryableError(error as Error)) {
+        // Wrap with timeout if configured
+        const result = timeoutMs > 0
+          ? await this.withTimeout(operation, timeoutMs, operationName)
+          : await operation();
+
+        const duration = Date.now() - attemptStart;
+        this.log('info', `${operationName} completed in ${duration}ms`, {
+          attempt,
+          durationMs: duration,
+        });
+
+        return result;
+      } catch (error) {
+        const duration = Date.now() - attemptStart;
+        lastError = error as Error;
+        const isTimeout = this.isTimeoutError(error as Error);
+
+        // Non-retryable errors: fail immediately
+        if (!isTimeout && !this.isRetryableError(error as Error)) {
+          this.log(
+            'error',
+            `${operationName} failed with non-retryable error after ${duration}ms: ${(error as Error).message}`,
+            { attempt, durationMs: duration }
+          );
           throw error;
         }
 
-        // Check if we have retries left
-        if (attempt < maxAttempts) {
-          const delay = this.calculateRetryDelay(attempt, retryConfig);
+        // Check retry budget for this error type
+        if (isTimeout) {
+          timeoutRetryCount++;
+          if (timeoutRetryCount > maxTimeoutRetries) {
+            this.log(
+              'error',
+              `${operationName} timeout retry budget exhausted (${maxTimeoutRetries} retries, ${duration}ms on last attempt)`,
+              { attempt, timeoutRetryCount, durationMs: duration }
+            );
+            throw error;
+          }
+          // Short fixed delay before timeout retry (no exponential backoff)
           this.log(
             'warn',
-            `Transient error during ${operationName}. Retry ${attempt}/${retryConfig.maxRetries} in ${delay}ms...`,
-            { attempt, maxRetries: retryConfig.maxRetries, delayMs: delay, error: (error as Error).message }
+            `${operationName} timed out after ${duration}ms. Timeout retry ${timeoutRetryCount}/${maxTimeoutRetries} in 2s...`,
+            { attempt, timeoutRetryCount, maxTimeoutRetries, durationMs: duration }
+          );
+          await this.sleep(2000);
+        } else {
+          generalRetryCount++;
+          if (generalRetryCount > maxGeneralRetries) {
+            this.log(
+              'error',
+              `${operationName} general retry budget exhausted (${maxGeneralRetries} retries): ${(error as Error).message}`,
+              { attempt, generalRetryCount, durationMs: duration }
+            );
+            throw error;
+          }
+          const delay = this.calculateRetryDelay(generalRetryCount, retryConfig);
+          this.log(
+            'warn',
+            `Transient error during ${operationName} after ${duration}ms. Retry ${generalRetryCount}/${maxGeneralRetries} in ${delay}ms: ${(error as Error).message}`,
+            { attempt, generalRetryCount, maxGeneralRetries, delayMs: delay, durationMs: duration }
           );
           await this.sleep(delay);
         }
       }
     }
 
-    // All retries exhausted
-    this.log('error', `All ${retryConfig.maxRetries} retries exhausted for ${operationName}`, {
+    // Safety: should not reach here
+    this.log('error', `All retries exhausted for ${operationName}`, {
       lastError: lastError?.message,
+      generalRetryCount,
+      timeoutRetryCount,
     });
     throw lastError;
   }

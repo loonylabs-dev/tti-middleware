@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] - 2026-02-12
+
+### Added
+
+#### Per-Attempt Timeout with Independent Retry Budget
+
+Added timeout protection for provider SDK calls that hang indefinitely (e.g., when the Vertex AI API never responds). Timeouts and transient errors (429, 5xx) now have **independent retry counters**, so a hung service doesn't burn through the quota-retry budget.
+
+**New `RetryOptions` fields:**
+- `timeoutMs` (default: `45000` = 45s) — per-attempt timeout. If the SDK call doesn't resolve within this time, the attempt is aborted.
+- `timeoutRetries` (default: `2`) — max retries specifically for timeout errors. Tracked independently from `maxRetries` (used for 429/5xx).
+
+**Behavior:**
+- Timeout errors get a short fixed 2s delay before retry (no exponential backoff).
+- Transient errors (429, 5xx) continue to use exponential backoff with `maxRetries`.
+- Both budgets are independent — a timeout doesn't consume a general retry, and vice versa.
+
+**Example:**
+```typescript
+const response = await service.generate({
+  prompt: 'A sunset',
+  retry: {
+    maxRetries: 6,       // 6 retries for quota errors (429)
+    timeoutMs: 45000,    // 45s per attempt
+    timeoutRetries: 2,   // 2 retries for timeouts
+  },
+});
+```
+
+**Worst-case timing for timeout scenario:** 3 attempts x 45s + 2 x 2s delay = ~2:19 min (then error propagates).
+
+#### Improved Provider Logging
+
+- Upgraded Imagen and Gemini SDK call logging from `debug` to `info` level.
+- Added response logging with duration after successful SDK calls.
+- Added per-attempt logging in `executeWithRetry` showing attempt number, timeout config, and retry budget status.
+- Log output is controllable via `setLogLevel()` or `TTI_LOG_LEVEL` env var.
+
+---
+
 ## [1.3.0] - 2026-02-06
 
 ### Fixed

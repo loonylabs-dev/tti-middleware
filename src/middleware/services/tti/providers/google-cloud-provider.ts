@@ -347,7 +347,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
 
       const parameters = helpers.toValue(parameterValue);
 
-      this.log('debug', 'Sending Imagen request', { endpoint, parameters: parameterValue });
+      this.log('info', 'Sending Imagen request to Vertex AI', { endpoint, parameters: parameterValue });
 
       const [response] = await client.predict({
         endpoint,
@@ -356,6 +356,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
       });
 
       const duration = Date.now() - startTime;
+      this.log('info', `Imagen response received in ${duration}ms`, { duration, hasPredictions: !!response.predictions?.length });
 
       if (!response.predictions || response.predictions.length === 0) {
         throw new GenerationFailedError(
@@ -548,11 +549,12 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
         config.temperature = request.providerOptions.temperature;
       }
 
-      this.log('debug', 'Sending Gemini request', {
+      this.log('info', 'Sending Gemini generateContent request to Vertex AI', {
         model: internalModelId,
         region,
         hasReferenceImages: hasReferenceImages(request),
-        config: JSON.stringify(config, null, 2),
+        referenceImageCount: request.referenceImages?.length || 0,
+        aspectRatio: request.aspectRatio,
       });
 
       const response = await client.generateContent({
@@ -562,6 +564,10 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
       });
 
       const duration = Date.now() - startTime;
+      this.log('info', `Gemini response received in ${duration}ms`, {
+        duration,
+        hasCandidates: !!(response?.candidates || (response as Record<string, unknown>)?.response),
+      });
 
       return this.processGeminiResponse(response, duration);
     } catch (error) {
