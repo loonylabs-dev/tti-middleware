@@ -80,9 +80,12 @@ export class ProviderUnavailableError extends TTIError {
 }
 
 export class GenerationFailedError extends TTIError {
-  constructor(provider: string, message: string, cause?: Error) {
+  public readonly modelResponse?: string;
+
+  constructor(provider: string, message: string, cause?: Error, modelResponse?: string) {
     super(provider, 'GENERATION_FAILED', message, cause);
     this.name = 'GenerationFailedError';
+    this.modelResponse = modelResponse;
   }
 }
 

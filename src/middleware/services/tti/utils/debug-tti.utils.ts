@@ -66,6 +66,7 @@ export interface TTIDebugInfo {
     message: string;
     code?: string;
     details?: unknown;
+    modelResponse?: string;
   };
 }
 
@@ -382,6 +383,9 @@ export class TTIDebugger {
       if (debugInfo.error.code) {
         sections.push(`- **Code**: ${debugInfo.error.code}`);
       }
+      if (debugInfo.error.modelResponse) {
+        sections.push(`- **Model Response**: ${debugInfo.error.modelResponse}`);
+      }
       if (debugInfo.error.details) {
         sections.push('- **Details**:');
         sections.push('```json');
@@ -514,7 +518,7 @@ export class TTIDebugger {
    */
   static updateWithError(
     debugInfo: TTIDebugInfo,
-    error: Error & { code?: string; cause?: unknown }
+    error: Error & { code?: string; cause?: unknown; modelResponse?: string }
   ): TTIDebugInfo {
     return {
       ...debugInfo,
@@ -523,6 +527,7 @@ export class TTIDebugger {
         message: error.message,
         code: error.code,
         details: error.cause,
+        modelResponse: error.modelResponse,
       },
     };
   }

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.1] - 2026-02-13
+
+### Fixed
+
+#### Full Model Response in Error Logs for Gemini "No Images" Failures
+
+When Gemini returns text instead of an image (e.g., refusing due to style/safety constraints), the model's full response text was truncated to 50 characters in both the error message and debug logs, making it impossible to diagnose why image generation was declined.
+
+**Changes:**
+- **Error message**: Increased text preview from 50 to 200 characters for readable error propagation
+- **Console log**: Added full `modelResponse` field to the structured log output
+- **Markdown debug log**: Added `Model Response` field showing the complete untruncated text from Gemini
+- **`GenerationFailedError`**: Added optional `modelResponse` property carrying the full model response
+
+**Before:**
+```
+## Error
+- **Message**: No images in response. Model returned: text(I cannot use the provided style instructions and c...).
+- **Code**: GENERATION_FAILED
+```
+
+**After:**
+```
+## Error
+- **Message**: No images in response. Model returned: text(I cannot use the provided style instructions and character references to generate...).
+- **Model Response**: I cannot use the provided style instructions and character references to generate this image because [full reason from Gemini].
+- **Code**: GENERATION_FAILED
+```
+
+---
+
 ## [1.4.0] - 2026-02-12
 
 ### Added

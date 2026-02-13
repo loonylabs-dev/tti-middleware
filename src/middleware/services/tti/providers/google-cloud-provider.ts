@@ -657,9 +657,13 @@ IMPORTANT: Maintain exact visual consistency with the subject in the reference -
 
     if (images.length === 0) {
       const firstParts = candidates[0]?.content?.parts || [];
+      const fullTexts: string[] = [];
       const partTypes = firstParts.map(
         (p: { text?: string; inlineData?: { mimeType: string } }) => {
-          if (p.text) return `text(${p.text.substring(0, 50)}...)`;
+          if (p.text) {
+            fullTexts.push(p.text);
+            return `text(${p.text.substring(0, 200)}${p.text.length > 200 ? '...' : ''})`;
+          }
           if (p.inlineData) return `inlineData(${p.inlineData.mimeType})`;
           return 'unknown';
         }
@@ -668,12 +672,17 @@ IMPORTANT: Maintain exact visual consistency with the subject in the reference -
       this.log('error', 'No images in Gemini response', {
         candidateCount: candidates.length,
         partTypes,
+        ...(fullTexts.length > 0 && { modelResponse: fullTexts.join('\n') }),
       });
+
+      const fullModelResponse = fullTexts.length > 0 ? fullTexts.join('\n') : undefined;
 
       throw new GenerationFailedError(
         this.providerName,
         `No images in response. Model returned: ${partTypes.join(', ')}. ` +
-          'Make sure responseModalities includes IMAGE.'
+          'Make sure responseModalities includes IMAGE.',
+        undefined,
+        fullModelResponse
       );
     }
 
