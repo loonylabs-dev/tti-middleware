@@ -3,7 +3,11 @@
  *
  * Unified provider for Google Cloud's image generation services:
  * - Imagen 3 (imagegeneration@006) - High quality text-to-image
+ * - Imagen 4 (imagen-4.0-generate-001) - Next-gen text-to-image with enhanced quality
+ * - Imagen 4 Fast (imagen-4.0-fast-generate-001) - Faster inference variant
+ * - Imagen 4 Ultra (imagen-4.0-ultra-generate-001) - Highest quality variant
  * - Gemini 2.5 Flash Image - Text-to-image with character consistency
+ * - Gemini 3 Pro Image (gemini-3-pro-image-preview) - 4K, text rendering
  *
  * All requests go through Google Cloud (Vertex AI) with proper DPA.
  * EU-compliant when using EU regions.
@@ -53,7 +57,24 @@ interface GoogleCloudConfig {
 // MODEL DEFINITIONS
 // ============================================================
 
+// Imagen 4 is available in most EU regions
+const IMAGEN_4_REGIONS = [
+  'europe-west1',
+  'europe-west2',
+  'europe-west3',
+  'europe-west4',
+  'europe-west6',
+  'europe-west8',
+  'europe-west9',
+  'europe-north1',
+  'europe-central2',
+  'europe-southwest1',
+  'us-central1',
+  'us-east4',
+];
+
 const GOOGLE_CLOUD_MODELS: ModelInfo[] = [
+  // ── Imagen models (Vertex AI predict API) ──────────────────
   {
     id: 'imagen-3',
     displayName: 'Imagen 3',
@@ -75,6 +96,44 @@ const GOOGLE_CLOUD_MODELS: ModelInfo[] = [
     pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
   },
   {
+    id: 'imagen-4',
+    displayName: 'Imagen 4',
+    capabilities: {
+      textToImage: true,
+      characterConsistency: false,
+      imageEditing: false,
+      maxImagesPerRequest: 4,
+    },
+    availableRegions: IMAGEN_4_REGIONS,
+    pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
+  },
+  {
+    id: 'imagen-4-fast',
+    displayName: 'Imagen 4 Fast',
+    capabilities: {
+      textToImage: true,
+      characterConsistency: false,
+      imageEditing: false,
+      maxImagesPerRequest: 4,
+    },
+    availableRegions: IMAGEN_4_REGIONS,
+    pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
+  },
+  {
+    id: 'imagen-4-ultra',
+    displayName: 'Imagen 4 Ultra',
+    capabilities: {
+      textToImage: true,
+      characterConsistency: false,
+      imageEditing: false,
+      maxImagesPerRequest: 4,
+    },
+    availableRegions: IMAGEN_4_REGIONS,
+    pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
+  },
+
+  // ── Gemini models (Vertex AI generateContent API) ──────────
+  {
     id: 'gemini-flash-image',
     displayName: 'Gemini 2.5 Flash Image',
     capabilities: {
@@ -93,13 +152,33 @@ const GOOGLE_CLOUD_MODELS: ModelInfo[] = [
     ],
     pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
   },
+  {
+    id: 'gemini-pro-image',
+    displayName: 'Gemini 3 Pro Image',
+    capabilities: {
+      textToImage: true,
+      characterConsistency: false, // Not documented for this model
+      imageEditing: false,
+      maxImagesPerRequest: 1,
+    },
+    // Requires global endpoint - regional endpoints return 404
+    availableRegions: ['global'],
+    pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
+  },
 ];
 
-// Internal model IDs used in API calls
+// Internal model IDs used in Vertex AI API calls
 const MODEL_ID_MAP: Record<string, string> = {
   'imagen-3': 'imagegeneration@006',
+  'imagen-4': 'imagen-4.0-generate-001',
+  'imagen-4-fast': 'imagen-4.0-fast-generate-001',
+  'imagen-4-ultra': 'imagen-4.0-ultra-generate-001',
   'gemini-flash-image': 'gemini-2.5-flash-image',
+  'gemini-pro-image': 'gemini-3-pro-image-preview',
 };
+
+// Models that use the Gemini generateContent API (vs Imagen predict API)
+const GEMINI_API_MODELS = new Set(['gemini-flash-image', 'gemini-pro-image']);
 
 // ============================================================
 // PROVIDER IMPLEMENTATION
@@ -112,7 +191,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
   // Lazy-loaded SDK clients
   private aiplatformClient: unknown | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private genaiClient: any | null = null;
+  private genaiClients: Map<string, any> = new Map();
 
   constructor(config?: Partial<GoogleCloudConfig>) {
     super(TTIProvider.GOOGLE_CLOUD);
@@ -206,25 +285,20 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
     });
 
     try {
-      // Route to appropriate implementation with retry support
+      // Route to appropriate API based on model type
       let response: TTIResponse;
-      switch (modelId) {
-        case 'imagen-3':
-          response = await this.executeWithRetry(
-            request,
-            () => this.generateWithImagen(request, effectiveRegion),
-            'Imagen API call'
-          );
-          break;
-        case 'gemini-flash-image':
-          response = await this.executeWithRetry(
-            request,
-            () => this.generateWithGemini(request, effectiveRegion),
-            'Gemini API call'
-          );
-          break;
-        default:
-          throw new InvalidConfigError(this.providerName, `Unknown model: ${modelId}`);
+      if (GEMINI_API_MODELS.has(modelId)) {
+        response = await this.executeWithRetry(
+          request,
+          () => this.generateWithGemini(request, modelId, effectiveRegion),
+          'Gemini API call'
+        );
+      } else {
+        response = await this.executeWithRetry(
+          request,
+          () => this.generateWithImagen(request, modelId, effectiveRegion),
+          'Imagen API call'
+        );
       }
 
       // Log successful response
@@ -275,6 +349,16 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
       return this.config.region;
     }
 
+    // Model requires global endpoint (e.g. preview models)
+    if (modelInfo.availableRegions.length === 1 && modelInfo.availableRegions[0] === 'global') {
+      this.log(
+        'info',
+        `Model ${modelId} requires global endpoint`,
+        { configuredRegion: this.config.region, effectiveRegion: 'global' }
+      );
+      return 'global';
+    }
+
     // Check if configured region supports this model
     if (modelInfo.availableRegions.includes(this.config.region)) {
       return this.config.region;
@@ -303,15 +387,16 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
   }
 
   // ============================================================
-  // PRIVATE: IMAGEN 3 IMPLEMENTATION
+  // PRIVATE: IMAGEN IMPLEMENTATION
   // ============================================================
 
   private async generateWithImagen(
     request: TTIRequest,
+    modelId: string,
     region: GoogleCloudRegion
   ): Promise<TTIResponse> {
     const startTime = Date.now();
-    const internalModelId = MODEL_ID_MAP['imagen-3'];
+    const internalModelId = MODEL_ID_MAP[modelId];
     this.lastUsedRegion = region;
 
     try {
@@ -365,7 +450,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
         );
       }
 
-      return this.processImagenResponse(response.predictions, helpers, duration);
+      return this.processImagenResponse(response.predictions, helpers, modelId, duration);
     } catch (error) {
       if (error instanceof InvalidConfigError || error instanceof GenerationFailedError) {
         throw error;
@@ -441,6 +526,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
   private processImagenResponse(
     predictions: unknown[],
     helpers: { fromValue: (val: unknown) => unknown },
+    modelId: string,
     duration: number
   ): TTIResponse {
     const images: TTIImage[] = [];
@@ -468,14 +554,14 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
 
     const usage: TTIUsage = {
       imagesGenerated: images.length,
-      modelId: 'imagen-3',
+      modelId,
     };
 
     return {
       images,
       metadata: {
         provider: this.providerName,
-        model: 'imagen-3',
+        model: modelId,
         region: this.lastUsedRegion || this.config.region,
         duration,
       },
@@ -484,15 +570,16 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
   }
 
   // ============================================================
-  // PRIVATE: GEMINI FLASH IMAGE IMPLEMENTATION
+  // PRIVATE: GEMINI IMAGE IMPLEMENTATION
   // ============================================================
 
   private async generateWithGemini(
     request: TTIRequest,
+    modelId: string,
     region: GoogleCloudRegion
   ): Promise<TTIResponse> {
     const startTime = Date.now();
-    const internalModelId = MODEL_ID_MAP['gemini-flash-image'];
+    const internalModelId = MODEL_ID_MAP[modelId];
     this.lastUsedRegion = region;
 
     try {
@@ -569,7 +656,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
         hasCandidates: !!(response?.candidates || (response as Record<string, unknown>)?.response),
       });
 
-      return this.processGeminiResponse(response, duration);
+      return this.processGeminiResponse(response, modelId, duration);
     } catch (error) {
       if (error instanceof InvalidConfigError || error instanceof GenerationFailedError) {
         throw error;
@@ -580,21 +667,18 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async getGenaiClient(region: GoogleCloudRegion): Promise<any> {
-    // Recreate client if region changed
-    if (!this.genaiClient) {
+    // Vertex AI client (one per region, since region is baked into the client)
+    if (!this.genaiClients.has(region)) {
       try {
         const { GoogleGenAI } = await import('@google/genai');
 
-        // Set environment variables for Vertex AI backend
-        process.env.GOOGLE_GENAI_USE_VERTEXAI = 'true';
-        process.env.GOOGLE_CLOUD_PROJECT = this.config.projectId;
-        process.env.GOOGLE_CLOUD_LOCATION = region;
-
-        this.genaiClient = new GoogleGenAI({
+        const client = new GoogleGenAI({
           vertexai: true,
           project: this.config.projectId,
           location: region,
         });
+
+        this.genaiClients.set(region, client);
 
         this.log('debug', 'Initialized @google/genai with Vertex AI backend', {
           project: this.config.projectId,
@@ -609,10 +693,11 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
       }
     }
 
+    const client = this.genaiClients.get(region);
     return {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       generateContent: async (params: any) => {
-        return this.genaiClient.models.generateContent(params);
+        return client.models.generateContent(params);
       },
     };
   }
@@ -631,7 +716,7 @@ IMPORTANT: Maintain exact visual consistency with the subject in the reference -
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private processGeminiResponse(response: any, duration: number): TTIResponse {
+  private processGeminiResponse(response: any, modelId: string, duration: number): TTIResponse {
     const images: TTIImage[] = [];
 
     const candidates = response?.candidates || response?.response?.candidates;
@@ -688,14 +773,14 @@ IMPORTANT: Maintain exact visual consistency with the subject in the reference -
 
     const usage: TTIUsage = {
       imagesGenerated: images.length,
-      modelId: 'gemini-flash-image',
+      modelId,
     };
 
     return {
       images,
       metadata: {
         provider: this.providerName,
-        model: 'gemini-flash-image',
+        model: modelId,
         region: this.lastUsedRegion || this.config.region,
         duration,
       },

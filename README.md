@@ -2,7 +2,7 @@
 
 # TTI Middleware
 
-*Provider-agnostic Text-to-Image middleware with **GDPR compliance** and **character consistency** support. Currently supports Google Cloud (Imagen 3, Gemini Flash Image), Eden AI, and IONOS. Features EU data residency via Vertex AI, automatic region fallback, retry logic, and comprehensive error handling.*
+*Provider-agnostic Text-to-Image middleware with **GDPR compliance** and **character consistency** support. Currently supports Google Cloud (Imagen 3, Imagen 4, Gemini Flash Image, Gemini 3 Pro Image), Eden AI, and IONOS. Features EU data residency via Vertex AI, automatic region fallback, retry logic, and comprehensive error handling.*
 
 <!-- Horizontal Badge Navigation Bar -->
 [![npm version](https://img.shields.io/npm/v/@loonylabs/tti-middleware.svg?style=for-the-badge&logo=npm&logoColor=white)](https://www.npmjs.com/package/@loonylabs/tti-middleware)
@@ -40,7 +40,7 @@
 ## Features
 
 - **Multi-Provider Architecture**: Unified API for all TTI providers
-  - **Google Cloud** (Recommended): Imagen 3 & Gemini Flash Image with EU data residency
+  - **Google Cloud** (Recommended): Imagen 3, Imagen 4, Gemini Flash Image & Gemini 3 Pro Image with EU data residency
   - **Eden AI**: Aggregator with access to OpenAI, Stability AI, Replicate (experimental)
   - **IONOS**: German cloud provider with OpenAI-compatible API (experimental)
 - **Character Consistency**: Generate consistent characters across multiple images (perfect for children's book illustrations)
@@ -204,12 +204,18 @@ IONOS_API_URL=https://api.ionos.cloud/ai/v1
 
 ### Google Cloud (Recommended)
 
-| Model | ID | Character Consistency | EU Regions |
-|-------|-----|----------------------|------------|
-| **Imagen 3** | `imagen-3` | No | All EU regions |
-| **Gemini Flash Image** | `gemini-flash-image` | **Yes** | europe-west1, europe-west4, europe-north1 |
+| Model | ID | Character Consistency | EU Regions | Max Images |
+|-------|-----|----------------------|------------|------------|
+| **Imagen 3** | `imagen-3` | No | All EU regions | 4 |
+| **Imagen 4** | `imagen-4` | No | All EU regions | 4 |
+| **Imagen 4 Fast** | `imagen-4-fast` | No | All EU regions | 4 |
+| **Imagen 4 Ultra** | `imagen-4-ultra` | No | All EU regions | 4 |
+| **Gemini Flash Image** | `gemini-flash-image` | **Yes** | europe-west1, europe-west4, europe-north1 | 1 |
+| **Gemini 3 Pro Image** | `gemini-pro-image` | No | `global` endpoint (auto-routed) | 1 |
 
-**Important:** `gemini-flash-image` is **NOT available** in `europe-west3` (Frankfurt)!
+**Important:**
+- `gemini-flash-image` is **NOT available** in `europe-west3` (Frankfurt) - auto-fallback to EU alternative
+- `gemini-pro-image` requires the **`global` Vertex AI endpoint** - the middleware handles this automatically
 
 ### Eden AI (Experimental)
 
@@ -227,13 +233,13 @@ IONOS_API_URL=https://api.ionos.cloud/ai/v1
 
 ### Google Cloud Region Availability
 
-| Region | Location | Imagen 3 | Gemini Flash Image |
-|--------|----------|----------|-------------------|
-| `europe-west1` | Belgium | Yes | Yes |
-| `europe-west3` | Frankfurt | Yes | **No** |
-| `europe-west4` | Netherlands | Yes | **Yes (Recommended)** |
-| `europe-north1` | Finland | Yes | Yes |
-| `europe-west9` | Paris | Yes | No |
+| Region | Location | Imagen 3 | Imagen 4 | Gemini Flash Image | Gemini Pro Image |
+|--------|----------|----------|----------|-------------------|-----------------|
+| `europe-west1` | Belgium | Yes | Yes | Yes | `global` endpoint |
+| `europe-west3` | Frankfurt | Yes | Yes | **No** | `global` endpoint |
+| `europe-west4` | Netherlands | Yes | Yes | **Yes (Recommended)** | `global` endpoint |
+| `europe-north1` | Finland | Yes | Yes | Yes | `global` endpoint |
+| `europe-west9` | Paris | Yes | Yes | No | `global` endpoint |
 
 ## Character Consistency
 
@@ -354,7 +360,7 @@ class TTIService {
 ```typescript
 interface TTIRequest {
   prompt: string;
-  model?: string;           // 'imagen-3', 'gemini-flash-image', etc.
+  model?: string;           // 'imagen-3', 'imagen-4', 'gemini-flash-image', 'gemini-pro-image', etc.
   n?: number;               // Number of images (default: 1)
   aspectRatio?: string;     // '1:1', '16:9', '4:3', etc.
 

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] - 2026-02-15
+
+### Added
+
+#### Imagen 4 & Gemini 3 Pro Image Support
+
+Added support for four new Google Cloud models, all accessible via Vertex AI:
+
+**Imagen 4 family** (uses same predict API as Imagen 3):
+- **`imagen-4`** — Standard Imagen 4 (`imagen-4.0-generate-001`), up to 2816x1536 resolution
+- **`imagen-4-fast`** — Faster inference variant (`imagen-4.0-fast-generate-001`), up to 1408x768
+- **`imagen-4-ultra`** — Highest quality variant (`imagen-4.0-ultra-generate-001`), up to 2816x1536
+
+**Gemini 3 Pro Image** (uses same generateContent API as Gemini Flash):
+- **`gemini-pro-image`** — Gemini 3 Pro Image Preview (`gemini-3-pro-image-preview`), 4K resolution, text rendering
+- **Requires `global` endpoint** — regional endpoints (e.g. `europe-west3`) return 404. The middleware handles this automatically.
+
+**Region availability:**
+- All Imagen 4 variants are available in all major EU regions including `europe-west3` (Frankfurt)
+- Gemini Pro Image requires the `global` Vertex AI endpoint (auto-routed by the middleware)
+
+### Changed
+
+#### API-Type Based Model Routing
+
+Refactored internal model routing from per-model switch cases to API-type based routing (Imagen predict API vs Gemini generateContent API). This makes adding future models trivial — just add a model definition and map it to the correct API type.
+
+#### Per-Region Genai Client Caching
+
+The `@google/genai` Vertex AI client is now cached per region instead of globally. This is necessary because `gemini-flash-image` uses regional endpoints (e.g. `europe-west1`) while `gemini-pro-image` requires the `global` endpoint — both can be used in the same session without conflicts.
+
+**No breaking changes** — external API remains unchanged.
+
+---
+
 ## [1.4.1] - 2026-02-13
 
 ### Fixed

@@ -78,6 +78,7 @@ export interface ModelInfo {
  * EU regions are GDPR-compliant
  */
 export type GoogleCloudRegion =
+  | 'global'          // Global endpoint (required by some preview models)
   | 'europe-west1'   // Belgium
   | 'europe-west2'   // London, UK
   | 'europe-west3'   // Frankfurt, Germany

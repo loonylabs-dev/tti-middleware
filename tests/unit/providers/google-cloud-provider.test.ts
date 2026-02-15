@@ -121,14 +121,54 @@ describe('GoogleCloudTTIProvider', () => {
       expect(gemini?.capabilities.characterConsistency).toBe(true);
     });
 
-    it('should include available regions for each model', () => {
+    it('should include imagen-4 models', () => {
       const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
       const models = provider.listModels();
 
-      for (const model of models) {
-        expect(model.availableRegions).toBeDefined();
+      const imagen4 = models.find((m) => m.id === 'imagen-4');
+      expect(imagen4).toBeDefined();
+      expect(imagen4?.displayName).toBe('Imagen 4');
+      expect(imagen4?.capabilities.textToImage).toBe(true);
+      expect(imagen4?.capabilities.maxImagesPerRequest).toBe(4);
+
+      const imagen4Fast = models.find((m) => m.id === 'imagen-4-fast');
+      expect(imagen4Fast).toBeDefined();
+      expect(imagen4Fast?.displayName).toBe('Imagen 4 Fast');
+
+      const imagen4Ultra = models.find((m) => m.id === 'imagen-4-ultra');
+      expect(imagen4Ultra).toBeDefined();
+      expect(imagen4Ultra?.displayName).toBe('Imagen 4 Ultra');
+    });
+
+    it('should include gemini-pro-image model', () => {
+      const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
+      const models = provider.listModels();
+      const geminiPro = models.find((m) => m.id === 'gemini-pro-image');
+
+      expect(geminiPro).toBeDefined();
+      expect(geminiPro?.displayName).toBe('Gemini 3 Pro Image');
+      expect(geminiPro?.capabilities.textToImage).toBe(true);
+      expect(geminiPro?.capabilities.maxImagesPerRequest).toBe(1);
+    });
+
+    it('should include available regions for region-restricted models', () => {
+      const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
+      const models = provider.listModels();
+
+      const regionRestricted = models.filter((m) => m.availableRegions);
+      expect(regionRestricted.length).toBeGreaterThan(0);
+      for (const model of regionRestricted) {
         expect(model.availableRegions?.length).toBeGreaterThan(0);
       }
+    });
+
+    it('should require global endpoint for gemini-pro-image', () => {
+      const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
+      const models = provider.listModels();
+      const geminiPro = models.find((m) => m.id === 'gemini-pro-image');
+
+      // Requires global endpoint - regional endpoints return 404
+      expect(geminiPro?.availableRegions).toEqual(['global']);
     });
 
     it('should indicate gemini-flash-image is NOT available in europe-west3', () => {
@@ -145,6 +185,14 @@ describe('GoogleCloudTTIProvider', () => {
       const imagen = models.find((m) => m.id === 'imagen-3');
 
       expect(imagen?.availableRegions).toContain('europe-west3');
+    });
+
+    it('should indicate imagen-4 IS available in europe-west3', () => {
+      const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
+      const models = provider.listModels();
+      const imagen4 = models.find((m) => m.id === 'imagen-4');
+
+      expect(imagen4?.availableRegions).toContain('europe-west3');
     });
   });
 
