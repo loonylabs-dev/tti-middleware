@@ -157,7 +157,7 @@ const GOOGLE_CLOUD_MODELS: ModelInfo[] = [
     displayName: 'Gemini 3 Pro Image',
     capabilities: {
       textToImage: true,
-      characterConsistency: false, // Not documented for this model
+      characterConsistency: true, // Supports up to 14 ref images (5 humans + 6 objects + 3 style)
       imageEditing: false,
       maxImagesPerRequest: 1,
     },

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.1] - 2026-02-17
+
+### Fixed
+
+- **Gemini 3 Pro Image**: Enable `characterConsistency` capability — the model supports up to 14 reference images (5 humans + 6 objects + 3 style refs) but the capability flag was incorrectly set to `false`, causing reference image requests to be rejected during validation.
+
+---
+
 ## [1.5.0] - 2026-02-15
 
 ### Added
