@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] - 2026-02-19
+
+### Added
+
+#### Region Rotation on Quota Errors (429 / Resource Exhausted)
+
+Opt-in region rotation for `GoogleCloudTTIProvider`. When Vertex AI returns quota errors (429 / Resource Exhausted due to Dynamic Shared Quota), the middleware now rotates through a consumer-provided list of regions instead of retrying the same exhausted region.
+
+**Configuration:**
+```typescript
+const provider = new GoogleCloudTTIProvider({
+  projectId: 'my-project',
+  region: 'europe-west4',           // Ignored when regionRotation is set
+  regionRotation: {
+    regions: ['europe-west4', 'europe-west1', 'europe-north1', 'europe-central2'],
+    fallback: 'global',
+    alwaysTryFallback: true,         // Default: true
+  },
+});
+```
+
+**Behavior:**
+- `maxRetries` is the **total retry budget** across all regions — region rotation does NOT multiply retries
+- Each 429 error → advance to next region AND consume one retry
+- Non-quota retryable errors (500, 503, timeout) retry on the **same** region
+- After all regions + retries exhausted: `alwaysTryFallback: true` triggers one bonus attempt on the fallback region
+- Without `regionRotation` configured → existing behavior unchanged
+
+**Example (regions=3, maxRetries=5):**
+```
+Attempt 1: europe-west4  → 429 → rotate
+Attempt 2: europe-west1  → 429 → rotate
+Attempt 3: europe-north1 → 429 → rotate to fallback
+Attempt 4: global         → 429 → stay on fallback
+Attempt 5: global         → 429 → stay on fallback
+FAIL — budget exhausted
+```
+
+#### Extended `GoogleCloudRegion` Type
+
+The `GoogleCloudRegion` type now covers all Vertex AI generative AI regions, including:
+- Europe: `europe-west6` (Zürich), `europe-west8` (Milan), `europe-north1` (Finland), `europe-central2` (Warsaw), `europe-southwest1` (Madrid)
+- US: `us-east1`, `us-east5`, `us-south1`, `us-west1`, `us-west4`
+- Asia Pacific: `asia-east1`, `asia-east2`, `asia-northeast1`, `asia-northeast3`, `asia-south1`, `asia-southeast1`, `australia-southeast1`
+- Middle East: `me-central1`, `me-central2`, `me-west1`
+
+#### `onRetry` Hook in `BaseTTIProvider.executeWithRetry`
+
+The `executeWithRetry` method now accepts an optional `onRetry` callback, invoked before each retry. This is a generic extension point that any provider can use to adjust state between retries (e.g., rotate endpoints). The base class remains region-agnostic.
+
+#### `isQuotaError` Method in `BaseTTIProvider`
+
+New protected method to distinguish quota/rate-limit errors (429, Resource Exhausted, etc.) from other retryable errors. Used internally for region rotation, available to subclasses.
+
+### Changed
+
+#### Imagen AI Platform Client is Now Per-Region
+
+The `@google-cloud/aiplatform` `PredictionServiceClient` is now cached per region (same pattern as the existing per-region `@google/genai` client). This enables region switching for Imagen models during retry.
+
+**No breaking changes** — external API remains unchanged. `regionRotation` is opt-in.
+
+---
+
 ## [1.5.1] - 2026-02-17
 
 ### Fixed

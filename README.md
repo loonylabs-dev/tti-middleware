@@ -45,6 +45,7 @@
   - **IONOS**: German cloud provider with OpenAI-compatible API (experimental)
 - **Character Consistency**: Generate consistent characters across multiple images (perfect for children's book illustrations)
 - **GDPR/DSGVO Compliance**: Built-in EU region support with automatic fallback
+- **Region Rotation**: Opt-in region rotation on quota errors (429) for Google Cloud — rotate through regions instead of retrying the same exhausted region
 - **Retry Logic**: Exponential backoff with jitter for transient errors (429, 408, 5xx, timeouts)
 - **TypeScript First**: Full type safety with comprehensive interfaces
 - **Logging Control**: Configurable log levels via environment or API
@@ -399,6 +400,31 @@ interface TTIResponse {
 ```
 
 ## Advanced Features
+
+<details>
+<summary><strong>Region Rotation (Google Cloud)</strong></summary>
+
+When Vertex AI returns 429 (Resource Exhausted) due to Dynamic Shared Quota, the middleware can rotate through a list of regions instead of retrying the same exhausted region:
+
+```typescript
+const provider = new GoogleCloudTTIProvider({
+  projectId: 'my-project',
+  region: 'europe-west4',
+  regionRotation: {
+    regions: ['europe-west4', 'europe-west1', 'europe-north1', 'europe-central2'],
+    fallback: 'global',
+    alwaysTryFallback: true, // Default: one bonus attempt on fallback after budget exhausted
+  },
+});
+```
+
+**Key behavior:**
+- `maxRetries` is the **total budget** across all regions (no multiplier)
+- Only **quota errors** (429, Resource Exhausted) trigger rotation — server errors (500, 503) retry the same region
+- `alwaysTryFallback: true` (default): one bonus attempt on fallback even if retry budget is exhausted
+- Without `regionRotation`: existing behavior unchanged
+
+</details>
 
 <details>
 <summary><strong>Retry Configuration</strong></summary>

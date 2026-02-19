@@ -24,6 +24,7 @@ import {
   TTIUsage,
   ModelInfo,
   GoogleCloudRegion,
+  RegionRotationConfig,
 } from '../../../types';
 import {
   BaseTTIProvider,
@@ -41,7 +42,7 @@ import { TTIDebugger, TTIDebugInfo } from '../utils/debug-tti.utils';
 interface GoogleCloudConfig {
   /** Google Cloud Project ID */
   projectId: string;
-  /** Default region for requests */
+  /** Default region for requests (used when regionRotation is not configured) */
   region: GoogleCloudRegion;
   /** Path to service account JSON file */
   keyFilename?: string;
@@ -51,6 +52,12 @@ interface GoogleCloudConfig {
     private_key: string;
     project_id?: string;
   };
+  /**
+   * Opt-in region rotation for quota errors (429 / Resource Exhausted).
+   * When configured, the middleware rotates through the listed regions
+   * on quota errors instead of retrying the same region.
+   */
+  regionRotation?: RegionRotationConfig;
 }
 
 // ============================================================
@@ -188,8 +195,8 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
   private config: GoogleCloudConfig;
   private lastUsedRegion: GoogleCloudRegion | null = null;
 
-  // Lazy-loaded SDK clients
-  private aiplatformClient: unknown | null = null;
+  // Lazy-loaded SDK clients (one per region, since region is baked into the client)
+  private aiplatformClients: Map<string, unknown> = new Map();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private genaiClients: Map<string, any> = new Map();
 
@@ -221,11 +228,35 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
       keyFilename:
         config?.keyFilename || process.env.GOOGLE_APPLICATION_CREDENTIALS,
       credentials: config?.credentials,
+      regionRotation: config?.regionRotation,
     };
+
+    // Validate regionRotation config
+    if (this.config.regionRotation) {
+      if (!this.config.regionRotation.regions || this.config.regionRotation.regions.length === 0) {
+        throw new InvalidConfigError(
+          TTIProvider.GOOGLE_CLOUD,
+          'regionRotation.regions must contain at least one region'
+        );
+      }
+      if (!this.config.regionRotation.fallback) {
+        throw new InvalidConfigError(
+          TTIProvider.GOOGLE_CLOUD,
+          'regionRotation.fallback is required'
+        );
+      }
+    }
 
     this.log('info', 'Google Cloud TTI Provider initialized', {
       projectId: this.config.projectId,
       region: this.config.region,
+      regionRotation: this.config.regionRotation
+        ? {
+            regions: this.config.regionRotation.regions,
+            fallback: this.config.regionRotation.fallback,
+            alwaysTryFallback: this.config.regionRotation.alwaysTryFallback ?? true,
+          }
+        : undefined,
       isEURegion: isEURegion(this.config.region),
       models: this.listModels().map((m) => m.id),
     });
@@ -263,8 +294,27 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
       );
     }
 
-    // Validate region availability
-    const effectiveRegion = this.getEffectiveRegion(modelId);
+    // Determine base region (handles global-only models, region availability)
+    const baseRegion = this.getEffectiveRegion(modelId);
+
+    // Region rotation: only for non-global models with rotation configured
+    const rotation = this.config.regionRotation;
+    const useRotation = !!(rotation && baseRegion !== 'global');
+
+    // Mutable region — the onRetry callback advances this on quota errors
+    let currentRegion: GoogleCloudRegion = useRotation ? rotation!.regions[0] : baseRegion;
+
+    // Build region sequence: [...regions, fallback]
+    let regionIndex = 0;
+    let regionSequence: GoogleCloudRegion[] = [];
+    if (useRotation) {
+      regionSequence = [...rotation!.regions, rotation!.fallback];
+      this.log('info', 'Region rotation enabled', {
+        sequence: regionSequence,
+        fallback: rotation!.fallback,
+        alwaysTryFallback: rotation!.alwaysTryFallback ?? true,
+      });
+    }
 
     // Create debug info for logging
     let debugInfo: TTIDebugInfo | null = null;
@@ -273,35 +323,51 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
         request,
         this.providerName,
         modelId,
-        { region: effectiveRegion }
+        { region: currentRegion }
       );
       await TTIDebugger.logRequest(debugInfo);
     }
 
     this.log('debug', 'Generating image', {
       model: modelId,
-      region: effectiveRegion,
+      region: currentRegion,
+      regionRotation: useRotation,
       hasReferenceImages: hasReferenceImages(request),
     });
 
-    try {
-      // Route to appropriate API based on model type
-      let response: TTIResponse;
-      if (GEMINI_API_MODELS.has(modelId)) {
-        response = await this.executeWithRetry(
-          request,
-          () => this.generateWithGemini(request, modelId, effectiveRegion),
-          'Gemini API call'
-        );
-      } else {
-        response = await this.executeWithRetry(
-          request,
-          () => this.generateWithImagen(request, modelId, effectiveRegion),
-          'Imagen API call'
-        );
-      }
+    const isGeminiModel = GEMINI_API_MODELS.has(modelId);
+    const operationName = isGeminiModel ? 'Gemini API call' : 'Imagen API call';
 
-      // Log successful response
+    // Operation lambda reads currentRegion from closure
+    const operation = () => {
+      if (isGeminiModel) {
+        return this.generateWithGemini(request, modelId, currentRegion);
+      } else {
+        return this.generateWithImagen(request, modelId, currentRegion);
+      }
+    };
+
+    // onRetry: advance region on quota errors, stay on same region otherwise
+    const onRetry = useRotation
+      ? (error: Error) => {
+          if (this.isQuotaError(error) && regionIndex < regionSequence.length - 1) {
+            regionIndex++;
+            currentRegion = regionSequence[regionIndex];
+            this.log('info', `Quota error — rotating to region ${currentRegion}`, {
+              regionIndex,
+              totalRegions: regionSequence.length,
+              region: currentRegion,
+            });
+          }
+          // Non-quota retryable errors: stay on same region
+        }
+      : undefined;
+
+    try {
+      const response = await this.executeWithRetry(request, operation, operationName, {
+        onRetry,
+      });
+
       if (debugInfo) {
         debugInfo = TTIDebugger.updateWithResponse(debugInfo, response);
         await TTIDebugger.logResponse(debugInfo);
@@ -309,7 +375,37 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
 
       return response;
     } catch (error) {
-      // Log error
+      // alwaysTryFallback: one bonus attempt on fallback after budget exhausted
+      if (
+        useRotation &&
+        this.isQuotaError(error as Error) &&
+        (rotation!.alwaysTryFallback !== false) &&
+        currentRegion !== rotation!.fallback
+      ) {
+        this.log('info', `Retry budget exhausted — bonus attempt on fallback region ${rotation!.fallback}`, {
+          exhaustedRegion: currentRegion,
+          fallback: rotation!.fallback,
+        });
+
+        currentRegion = rotation!.fallback;
+        try {
+          const response = await operation();
+
+          if (debugInfo) {
+            debugInfo = TTIDebugger.updateWithResponse(debugInfo, response);
+            await TTIDebugger.logResponse(debugInfo);
+          }
+
+          return response;
+        } catch (fallbackError) {
+          if (debugInfo) {
+            debugInfo = TTIDebugger.updateWithError(debugInfo, fallbackError as Error);
+            await TTIDebugger.logError(debugInfo);
+          }
+          throw fallbackError;
+        }
+      }
+
       if (debugInfo) {
         debugInfo = TTIDebugger.updateWithError(debugInfo, error as Error);
         await TTIDebugger.logError(debugInfo);
@@ -400,7 +496,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
     this.lastUsedRegion = region;
 
     try {
-      const { client, helpers } = await this.getAiplatformClient();
+      const { client, helpers } = await this.getAiplatformClient(region);
 
       const endpoint = `projects/${this.config.projectId}/locations/${region}/publishers/google/models/${internalModelId}`;
 
@@ -459,7 +555,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
     }
   }
 
-  private async getAiplatformClient(): Promise<{
+  private async getAiplatformClient(region: GoogleCloudRegion): Promise<{
     client: {
       predict: (request: unknown) => Promise<Array<{ predictions?: unknown[] }>>;
     };
@@ -468,7 +564,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
       fromValue: (val: unknown) => unknown;
     };
   }> {
-    if (!this.aiplatformClient) {
+    if (!this.aiplatformClients.has(region)) {
       try {
         const { v1, helpers } = await import('@google-cloud/aiplatform');
 
@@ -481,7 +577,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
             project_id?: string;
           };
         } = {
-          apiEndpoint: `${this.config.region}-aiplatform.googleapis.com`,
+          apiEndpoint: `${region}-aiplatform.googleapis.com`,
         };
 
         if (this.config.keyFilename) {
@@ -491,10 +587,15 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
         }
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        this.aiplatformClient = new v1.PredictionServiceClient(clientOptions as any);
+        this.aiplatformClients.set(region, new v1.PredictionServiceClient(clientOptions as any));
+
+        this.log('debug', 'Initialized @google-cloud/aiplatform client', {
+          region,
+          apiEndpoint: clientOptions.apiEndpoint,
+        });
 
         return {
-          client: this.aiplatformClient as {
+          client: this.aiplatformClients.get(region) as {
             predict: (request: unknown) => Promise<Array<{ predictions?: unknown[] }>>;
           },
           helpers: helpers as {
@@ -513,7 +614,7 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
 
     const { helpers } = await import('@google-cloud/aiplatform');
     return {
-      client: this.aiplatformClient as {
+      client: this.aiplatformClients.get(region) as {
         predict: (request: unknown) => Promise<Array<{ predictions?: unknown[] }>>;
       },
       helpers: helpers as {

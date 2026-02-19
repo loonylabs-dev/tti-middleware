@@ -78,14 +78,65 @@ export interface ModelInfo {
  * EU regions are GDPR-compliant
  */
 export type GoogleCloudRegion =
-  | 'global'          // Global endpoint (required by some preview models)
-  | 'europe-west1'   // Belgium
-  | 'europe-west2'   // London, UK
-  | 'europe-west3'   // Frankfurt, Germany
-  | 'europe-west4'   // Netherlands
-  | 'europe-west9'   // Paris, France
-  | 'us-central1'    // Iowa (NOT EU-compliant)
-  | 'us-east4';      // Virginia (NOT EU-compliant)
+  | 'global'              // Global endpoint (required by some preview models)
+  // Europe
+  | 'europe-west1'       // Belgium
+  | 'europe-west2'       // London, UK
+  | 'europe-west3'       // Frankfurt, Germany
+  | 'europe-west4'       // Netherlands
+  | 'europe-west6'       // Zürich, Switzerland
+  | 'europe-west8'       // Milan, Italy
+  | 'europe-west9'       // Paris, France
+  | 'europe-north1'      // Finland
+  | 'europe-central2'    // Warsaw, Poland
+  | 'europe-southwest1'  // Madrid, Spain
+  // US
+  | 'us-central1'        // Iowa
+  | 'us-east1'           // South Carolina
+  | 'us-east4'           // N. Virginia
+  | 'us-east5'           // Columbus
+  | 'us-south1'          // Dallas
+  | 'us-west1'           // Oregon
+  | 'us-west4'           // Las Vegas
+  // Asia Pacific
+  | 'asia-east1'         // Taiwan
+  | 'asia-east2'         // Hong Kong
+  | 'asia-northeast1'    // Tokyo
+  | 'asia-northeast3'    // Seoul
+  | 'asia-south1'        // Mumbai
+  | 'asia-southeast1'    // Singapore
+  | 'australia-southeast1' // Sydney
+  // Middle East
+  | 'me-central1'        // Doha
+  | 'me-central2'        // Dammam
+  | 'me-west1';          // Tel Aviv
+
+// ============================================================
+// REGION ROTATION (Google Cloud specific)
+// ============================================================
+
+/**
+ * Configuration for region rotation on quota errors (429 / Resource Exhausted).
+ *
+ * When Vertex AI returns a quota error, the middleware rotates through the
+ * configured regions instead of retrying the same region. This is useful
+ * when Dynamic Shared Quota is temporarily exhausted in a single region.
+ *
+ * The total retry budget (from RetryOptions.maxRetries) is shared across
+ * all regions — region rotation does NOT multiply the retry count.
+ */
+export interface RegionRotationConfig {
+  /** Ordered list of regions to try. First entry = primary region. */
+  regions: GoogleCloudRegion[];
+  /** Last-resort region after all regions exhausted (typically 'global'). */
+  fallback: GoogleCloudRegion;
+  /**
+   * If true: when maxRetries is exhausted before reaching the fallback,
+   * one final bonus attempt on the fallback region is made.
+   * @default true
+   */
+  alwaysTryFallback?: boolean;
+}
 
 // ============================================================
 // REQUEST & RESPONSE
