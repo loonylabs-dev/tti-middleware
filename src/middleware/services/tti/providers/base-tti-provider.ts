@@ -413,6 +413,22 @@ export abstract class BaseTTIProvider implements ITTIProvider {
   }
 
   /**
+   * Check if an error is a quota/rate-limit error (429 / Resource Exhausted).
+   * Used by providers to distinguish quota errors from other retryable errors
+   * (e.g., for region rotation on quota errors only).
+   */
+  protected isQuotaError(error: Error): boolean {
+    const message = error.message.toLowerCase();
+    return (
+      message.includes('429') ||
+      message.includes('resource exhausted') ||
+      message.includes('quota exceeded') ||
+      message.includes('rate limit') ||
+      message.includes('too many requests')
+    );
+  }
+
+  /**
    * Execute a generation function with retry logic for transient errors.
    * Retries on: 429, 408, 5xx, network timeouts, TCP disconnects.
    * Does NOT retry on: 400, 401, 403, and other client errors.
@@ -421,11 +437,19 @@ export abstract class BaseTTIProvider implements ITTIProvider {
    * retry.timeoutMs, default 45s). Timeout errors have their own retry
    * counter (timeoutRetries, default 2) independent from the general
    * maxRetries used for quota/server errors.
+   *
+   * @param options.onRetry - Optional callback invoked before each retry.
+   *   Receives the error that triggered the retry and the current general
+   *   retry count. Providers can use this to adjust state between retries
+   *   (e.g., rotate regions on quota errors).
    */
   protected async executeWithRetry<T>(
     request: TTIRequest,
     operation: () => Promise<T>,
-    operationName: string
+    operationName: string,
+    options?: {
+      onRetry?: (error: Error, generalRetryCount: number) => void;
+    }
   ): Promise<T> {
     const retryConfig = this.resolveRetryConfig(request);
 
@@ -513,6 +537,10 @@ export abstract class BaseTTIProvider implements ITTIProvider {
               { attempt, generalRetryCount, durationMs: duration }
             );
             throw error;
+          }
+          // Notify provider before retry (e.g., for region rotation)
+          if (options?.onRetry) {
+            options.onRetry(error as Error, generalRetryCount);
           }
           const delay = this.calculateRetryDelay(generalRetryCount, retryConfig);
           this.log(

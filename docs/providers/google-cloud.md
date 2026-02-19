@@ -66,12 +66,18 @@ const result = await service.generate({
 ```typescript
 const provider = new GoogleCloudTTIProvider({
   projectId: 'my-project',        // Google Cloud Project ID
-  region: 'europe-west4',         // Default region
+  region: 'europe-west4',         // Default region (ignored when regionRotation is set)
   keyFilename: './sa.json',       // Service account file
   // OR
   credentials: {                  // Direct credentials
     client_email: '...',
     private_key: '...',
+  },
+  // Optional: rotate through regions on quota errors (429)
+  regionRotation: {
+    regions: ['europe-west4', 'europe-west1', 'europe-north1'],
+    fallback: 'global',
+    alwaysTryFallback: true,     // Default: true
   },
 });
 ```
@@ -225,18 +231,47 @@ const result = await service.generate({
 });
 ```
 
+## Region Rotation on Quota Errors
+
+When Vertex AI returns 429 (Resource Exhausted) due to Dynamic Shared Quota, the middleware can rotate through regions instead of retrying the same exhausted region:
+
+```typescript
+const provider = new GoogleCloudTTIProvider({
+  projectId: 'my-project',
+  region: 'europe-west4',
+  regionRotation: {
+    regions: ['europe-west4', 'europe-west1', 'europe-north1', 'europe-central2'],
+    fallback: 'global',
+    alwaysTryFallback: true, // Default: true
+  },
+});
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `regions` | (required) | Ordered list of regions to try. First entry = primary. |
+| `fallback` | (required) | Last-resort region after all regions exhausted (typically `'global'`). |
+| `alwaysTryFallback` | `true` | When retry budget is exhausted before reaching fallback, one bonus attempt on fallback. |
+
+**Key behavior:**
+- `maxRetries` is the **total budget** across all regions — NOT per region
+- Only quota errors (429, Resource Exhausted) trigger rotation
+- Server errors (500, 503) and timeouts retry on the **same** region
+- The consumer is responsible for listing regions that support the requested model
+
 ## Retry Configuration
 
-The provider automatically retries on rate limit errors (429):
+The provider automatically retries on transient errors (429, 5xx, timeouts):
 
 ```typescript
 const result = await service.generate({
   prompt: 'A sunset',
   model: 'imagen-3',
   retry: {
-    maxRetries: 3,           // Default: 2
-    delayMs: 2000,           // Default: 1000
-    incrementalBackoff: true, // Default: false
+    maxRetries: 3,           // Default: 3
+    delayMs: 1000,           // Default: 1000
+    backoffMultiplier: 2.0,  // Default: 2.0
+    jitter: true,            // Default: true
   },
 });
 ```
