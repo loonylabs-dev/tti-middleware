@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.0] - 2026-02-27
+
+### Added
+
+#### Gemini 3.1 Flash Image Support (Nano Banana 2)
+
+Added support for the new **Gemini 3.1 Flash Image** model (`gemini-3.1-flash-image-preview`), also known as "Nano Banana 2". This is the successor to `gemini-flash-image` with significantly improved capabilities and broader region support.
+
+**Model ID:** `gemini-flash-image-2`
+
+**Key improvements over `gemini-flash-image`:**
+- **Resolution control** — via new `imageSize` config option (`"1K"`, `"2K"`, `"4K"`)
+- **Improved text rendering** — legible text in posters, diagrams, and infographics
+- **Enhanced character consistency** — up to 5 characters + 14 objects per prompt
+- **Extended aspect ratios** — adds 1:4, 4:1, 1:8, 8:1
+
+**Note:** As a preview model, `gemini-flash-image-2` currently requires the `global` Vertex AI endpoint (auto-routed by the middleware, same as `gemini-pro-image`). Regional endpoints will likely become available once the model reaches GA.
+
+**Usage:**
+```typescript
+const response = await service.generate({
+  prompt: 'A poster for a jazz concert with readable text',
+  model: 'gemini-flash-image-2',
+  aspectRatio: '16:9',
+  providerOptions: {
+    imageSize: '2K',  // NEW: resolution control
+  },
+});
+```
+
+**Available regions:** `global` (preview — regional endpoints expected at GA)
+
+**API compatibility:** Uses the same Gemini `generateContent` API as existing Gemini models. Character consistency (both structured and index-based modes) works identically.
+
+#### `imageSize` via `providerOptions`
+
+The new `imageSize` parameter can be passed via `providerOptions` for Gemini models that support it. It is added to the `imageConfig` alongside `aspectRatio`.
+
+```typescript
+providerOptions: {
+  imageSize: '4K',  // "1K" | "2K" | "4K"
+}
+```
+
+**No breaking changes** — external API remains unchanged. `imageSize` is optional and only affects models that support it.
+
+---
+
 ## [1.6.0] - 2026-02-19
 
 ### Added

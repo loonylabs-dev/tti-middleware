@@ -8,6 +8,7 @@
  * - Imagen 4 Ultra (imagen-4.0-ultra-generate-001) - Highest quality variant
  * - Gemini 2.5 Flash Image - Text-to-image with character consistency
  * - Gemini 3 Pro Image (gemini-3-pro-image-preview) - 4K, text rendering
+ * - Gemini 3.1 Flash Image (gemini-3.1-flash-image-preview) - 4K, improved text rendering (global endpoint)
  *
  * All requests go through Google Cloud (Vertex AI) with proper DPA.
  * EU-compliant when using EU regions.
@@ -172,6 +173,20 @@ const GOOGLE_CLOUD_MODELS: ModelInfo[] = [
     availableRegions: ['global'],
     pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
   },
+  {
+    id: 'gemini-flash-image-2',
+    displayName: 'Gemini 3.1 Flash Image',
+    capabilities: {
+      textToImage: true,
+      characterConsistency: true, // Up to 5 characters + 14 objects
+      imageEditing: false,
+      maxImagesPerRequest: 1,
+    },
+    // Preview model — requires global endpoint (same as gemini-pro-image).
+    // Will likely get regional endpoints once GA.
+    availableRegions: ['global'],
+    pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
+  },
 ];
 
 // Internal model IDs used in Vertex AI API calls
@@ -182,10 +197,11 @@ const MODEL_ID_MAP: Record<string, string> = {
   'imagen-4-ultra': 'imagen-4.0-ultra-generate-001',
   'gemini-flash-image': 'gemini-2.5-flash-image',
   'gemini-pro-image': 'gemini-3-pro-image-preview',
+  'gemini-flash-image-2': 'gemini-3.1-flash-image-preview',
 };
 
 // Models that use the Gemini generateContent API (vs Imagen predict API)
-const GEMINI_API_MODELS = new Set(['gemini-flash-image', 'gemini-pro-image']);
+const GEMINI_API_MODELS = new Set(['gemini-flash-image', 'gemini-pro-image', 'gemini-flash-image-2']);
 
 // ============================================================
 // PROVIDER IMPLEMENTATION
@@ -725,11 +741,17 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
         responseModalities: ['TEXT', 'IMAGE'],
       };
 
-      // Add imageConfig with aspectRatio if provided
-      if (request.aspectRatio) {
-        config.imageConfig = {
-          aspectRatio: request.aspectRatio,
-        };
+      // Add imageConfig with aspectRatio and/or imageSize if provided
+      if (request.aspectRatio || request.providerOptions?.imageSize) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const imageConfig: any = {};
+        if (request.aspectRatio) {
+          imageConfig.aspectRatio = request.aspectRatio;
+        }
+        if (request.providerOptions?.imageSize) {
+          imageConfig.imageSize = request.providerOptions.imageSize;
+        }
+        config.imageConfig = imageConfig;
       }
 
       // Add temperature if provided

@@ -151,6 +151,27 @@ describe('GoogleCloudTTIProvider', () => {
       expect(geminiPro?.capabilities.maxImagesPerRequest).toBe(1);
     });
 
+    it('should include gemini-flash-image-2 model', () => {
+      const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
+      const models = provider.listModels();
+      const geminiFlash2 = models.find((m) => m.id === 'gemini-flash-image-2');
+
+      expect(geminiFlash2).toBeDefined();
+      expect(geminiFlash2?.displayName).toBe('Gemini 3.1 Flash Image');
+      expect(geminiFlash2?.capabilities.textToImage).toBe(true);
+      expect(geminiFlash2?.capabilities.characterConsistency).toBe(true);
+      expect(geminiFlash2?.capabilities.maxImagesPerRequest).toBe(1);
+    });
+
+    it('should require global endpoint for gemini-flash-image-2 (preview model)', () => {
+      const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
+      const models = provider.listModels();
+      const geminiFlash2 = models.find((m) => m.id === 'gemini-flash-image-2');
+
+      // Preview model — requires global endpoint, same pattern as gemini-pro-image
+      expect(geminiFlash2?.availableRegions).toEqual(['global']);
+    });
+
     it('should include available regions for region-restricted models', () => {
       const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
       const models = provider.listModels();
@@ -271,6 +292,20 @@ describe('GoogleCloudTTIProvider', () => {
           subjectDescription: 'test',
         })
       ).rejects.toThrow('characterConsistency');
+    });
+
+    it('should allow referenceImages with gemini-flash-image-2', async () => {
+      // gemini-flash-image-2 supports character consistency, so this should not
+      // throw a capability error. It will fail at the API call level (no mock),
+      // but NOT with a CapabilityNotSupportedError.
+      await expect(
+        provider.generate({
+          prompt: 'test',
+          model: 'gemini-flash-image-2',
+          referenceImages: [{ base64: 'data' }],
+          subjectDescription: 'cute bear',
+        })
+      ).rejects.not.toThrow('characterConsistency');
     });
 
     it('should allow referenceImages without subjectDescription (raw multimodal mode)', () => {

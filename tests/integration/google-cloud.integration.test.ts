@@ -273,6 +273,97 @@ describeLive('Google Cloud TTI Provider - Integration Tests', () => {
   });
 
   // ============================================================
+  // GEMINI 3.1 FLASH IMAGE (NANO BANANA 2) TESTS
+  // ============================================================
+
+  describe('Gemini 3.1 Flash Image', () => {
+    itLive(
+      'should generate a simple image',
+      async () => {
+        logLiveTestStart('Gemini 3.1 Flash - Simple Image');
+
+        const request = buildLiveTestRequest({
+          prompt: 'A friendly cartoon robot waving hello, digital art style, clean lines',
+          model: 'gemini-flash-image-2',
+        });
+
+        const response = await service.generate(request);
+
+        expect(response).toBeDefined();
+        expect(response.images.length).toBeGreaterThan(0);
+        expect(response.metadata.model).toBe('gemini-flash-image-2');
+        expect(validateImageResponse(response)).toBe(true);
+
+        logLiveTestResult({
+          model: response.metadata.model,
+          region: response.metadata.region,
+          duration: response.metadata.duration,
+          imagesGenerated: response.usage.imagesGenerated,
+        });
+      },
+      TTI_TIMEOUT
+    );
+
+    itLive(
+      'should auto-route to global endpoint',
+      async () => {
+        logLiveTestStart('Gemini 3.1 Flash - Global Endpoint');
+
+        // Preview model requires global endpoint — middleware should auto-route
+        const request = buildLiveTestRequest({
+          prompt: 'A simple green circle on white background, minimal',
+          model: 'gemini-flash-image-2',
+        });
+
+        const response = await service.generate(request);
+
+        expect(response).toBeDefined();
+        expect(response.metadata.region).toBe('global');
+        expect(validateImageResponse(response)).toBe(true);
+
+        logLiveTestResult({
+          model: response.metadata.model,
+          region: response.metadata.region,
+          duration: response.metadata.duration,
+          imagesGenerated: response.usage.imagesGenerated,
+        });
+
+        console.log('[LIVE TEST] ✓ Auto-routed to global endpoint');
+      },
+      TTI_TIMEOUT
+    );
+
+    itLive(
+      'should support imageSize 1K via providerOptions',
+      async () => {
+        logLiveTestStart('Gemini 3.1 Flash - imageSize 1K');
+
+        const request = buildLiveTestRequest({
+          prompt: 'A detailed botanical illustration of a sunflower, scientific accuracy',
+          model: 'gemini-flash-image-2',
+          providerOptions: { imageSize: '1K' },
+        });
+
+        const response = await service.generate(request);
+
+        expect(response).toBeDefined();
+        expect(response.images.length).toBeGreaterThan(0);
+        expect(validateImageResponse(response)).toBe(true);
+
+        logLiveTestResult({
+          model: response.metadata.model,
+          region: response.metadata.region,
+          duration: response.metadata.duration,
+          imagesGenerated: response.usage.imagesGenerated,
+        });
+
+        console.log('[LIVE TEST] ✓ imageSize 1K generation successful');
+      },
+      TTI_TIMEOUT
+    );
+  });
+
+  // ============================================================
   // RETRY LOGIC TESTS
   // ============================================================
 
