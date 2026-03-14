@@ -616,7 +616,8 @@ export abstract class BaseTTIProvider implements ITTIProvider {
       message.includes('epipe') ||
       message.includes('ehostunreach') ||
       message.includes('enetunreach') ||
-      message.includes('socket hang up')
+      message.includes('socket hang up') ||
+      message.includes('fetch failed')
     ) {
       return true;
     }
@@ -672,7 +673,8 @@ export abstract class BaseTTIProvider implements ITTIProvider {
     if (
       errorMessage.includes('timeout') ||
       errorMessage.includes('econnrefused') ||
-      errorMessage.includes('enotfound')
+      errorMessage.includes('enotfound') ||
+      errorMessage.includes('fetch failed')
     ) {
       return new NetworkError(
         this.providerName,

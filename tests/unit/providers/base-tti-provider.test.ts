@@ -392,6 +392,11 @@ describe('BaseTTIProvider', () => {
       expect(error).toBeInstanceOf(NetworkError);
     });
 
+    it('should classify fetch failed errors as NetworkError', () => {
+      const error = provider.testHandleError(new Error('Generation failed: during Gemini API call: exception TypeError: fetch failed sending request'));
+      expect(error).toBeInstanceOf(NetworkError);
+    });
+
     it('should classify other errors as GenerationFailedError', () => {
       const error = provider.testHandleError(new Error('Unknown error'));
       expect(error).toBeInstanceOf(GenerationFailedError);
@@ -479,6 +484,14 @@ describe('BaseTTIProvider', () => {
 
     it('should retry on socket hang up', () => {
       expect(provider.testIsRetryableError(new Error('socket hang up'))).toBe(true);
+    });
+
+    it('should retry on fetch failed (undici/Node.js network error)', () => {
+      expect(provider.testIsRetryableError(new Error('TypeError: fetch failed sending request'))).toBe(true);
+    });
+
+    it('should retry on fetch failed wrapped in provider message', () => {
+      expect(provider.testIsRetryableError(new Error('Generation failed: during Gemini API call: exception TypeError: fetch failed sending request'))).toBe(true);
     });
 
     // Non-retryable
