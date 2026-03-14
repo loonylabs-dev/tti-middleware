@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.0] - 2026-03-14
+
+### Fixed
+
+#### Retry on `TypeError: fetch failed` (Node.js/undici network errors)
+
+`TypeError: fetch failed` — thrown by the Node.js undici fetcher when a TLS connection drops or a large payload causes the connection to be closed before the server responds — was incorrectly classified as a non-retryable error, causing the middleware to fail immediately instead of retrying.
+
+This error is common when generating images with multiple reference images (e.g., identity + style reference), where Vertex AI processing time can exceed the undici connection idle timeout.
+
+**Changes:**
+
+- `isRetryableError()`: Added `"fetch failed"` to the network error patterns — errors containing this string are now retried with the existing exponential backoff logic.
+- `handleError()`: Added `"fetch failed"` to the `NetworkError` classification — these errors are now correctly surfaced as `NetworkError` instead of `GenerationFailedError`.
+
+---
+
 ## [1.7.0] - 2026-02-27
 
 ### Added
