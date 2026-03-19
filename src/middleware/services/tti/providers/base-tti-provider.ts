@@ -344,6 +344,7 @@ export abstract class BaseTTIProvider implements ITTIProvider {
       jitter: retryOption.jitter ?? DEFAULT_RETRY_OPTIONS.jitter,
       timeoutMs: retryOption.timeoutMs ?? DEFAULT_RETRY_OPTIONS.timeoutMs,
       timeoutRetries: retryOption.timeoutRetries ?? DEFAULT_RETRY_OPTIONS.timeoutRetries,
+      graceMs: retryOption.graceMs ?? DEFAULT_RETRY_OPTIONS.graceMs,
     };
   }
 
@@ -378,30 +379,81 @@ export abstract class BaseTTIProvider implements ITTIProvider {
   }
 
   /**
-   * Wrap an operation with a timeout. If the operation doesn't resolve
-   * within timeoutMs, the returned promise rejects with a timeout error.
-   * The original operation continues running (promises can't be cancelled),
-   * but its result is ignored.
+   * Wrap an operation with a timeout and optional grace period.
+   *
+   * Normal flow (graceMs = 0):
+   *   If the operation doesn't resolve within `timeoutMs`, the returned promise
+   *   rejects immediately with a timeout error.
+   *
+   * Grace period flow (graceMs > 0):
+   *   When `timeoutMs` fires, instead of rejecting immediately, a grace period
+   *   starts. If the operation resolves successfully within `graceMs`, the result
+   *   is used and no timeout error is thrown. Only if the grace period also expires
+   *   does the promise reject — with an error reflecting the total wait time.
+   *
+   * This prevents paying for (and discarding) a Vertex AI response that arrived
+   * slightly after the timeout threshold.
    */
   private withTimeout<T>(
     operation: () => Promise<T>,
     timeoutMs: number,
+    graceMs: number,
     operationName: string
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(`timeout: ${operationName} did not complete within ${timeoutMs}ms`));
-      }, timeoutMs);
+      let settled = false;
+      let inGracePeriod = false;
+      let mainTimerRef: ReturnType<typeof setTimeout>;
+      let graceTimerRef: ReturnType<typeof setTimeout> | null = null;
 
-      operation()
-        .then((result) => {
-          clearTimeout(timer);
+      const operationPromise = operation();
+
+      // Handle operation resolution — can fire at any point, including during grace
+      operationPromise.then(
+        (result) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(mainTimerRef);
+          if (graceTimerRef) clearTimeout(graceTimerRef);
+          if (inGracePeriod) {
+            this.log('info', `${operationName} completed during grace period`, { graceMs });
+          }
           resolve(result);
-        })
-        .catch((error) => {
-          clearTimeout(timer);
+        },
+        (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(mainTimerRef);
+          if (graceTimerRef) clearTimeout(graceTimerRef);
           reject(error);
-        });
+        }
+      );
+
+      // Primary timeout
+      mainTimerRef = setTimeout(() => {
+        if (settled) return;
+
+        if (graceMs > 0) {
+          inGracePeriod = true;
+          this.log(
+            'warn',
+            `${operationName} primary timeout after ${timeoutMs}ms, entering grace period (${graceMs}ms)`,
+            { timeoutMs, graceMs }
+          );
+          graceTimerRef = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            reject(
+              new Error(
+                `timeout: ${operationName} did not complete within ${timeoutMs + graceMs}ms (including ${graceMs}ms grace period)`
+              )
+            );
+          }, graceMs);
+        } else {
+          settled = true;
+          reject(new Error(`timeout: ${operationName} did not complete within ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
     });
   }
 
@@ -459,6 +511,7 @@ export abstract class BaseTTIProvider implements ITTIProvider {
     }
 
     const timeoutMs = retryConfig.timeoutMs || 0;
+    const graceMs = retryConfig.graceMs ?? 0;
     const maxTimeoutRetries = retryConfig.timeoutRetries ?? 2;
     let lastError: Error | null = null;
     let generalRetryCount = 0;
@@ -485,7 +538,7 @@ export abstract class BaseTTIProvider implements ITTIProvider {
 
         // Wrap with timeout if configured
         const result = timeoutMs > 0
-          ? await this.withTimeout(operation, timeoutMs, operationName)
+          ? await this.withTimeout(operation, timeoutMs, graceMs, operationName)
           : await operation();
 
         const duration = Date.now() - attemptStart;

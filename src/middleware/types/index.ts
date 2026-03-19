@@ -349,6 +349,24 @@ export interface RetryOptions {
   timeoutRetries?: number;
 
   /**
+   * Grace period in milliseconds after a timeout before abandoning the attempt (default: 0).
+   *
+   * When `timeoutMs` fires, instead of immediately failing and starting a new retry,
+   * the middleware waits an additional `graceMs`. If the in-flight request resolves
+   * successfully within this window, the result is used and no retry is needed.
+   *
+   * This prevents paying for (and discarding) a successful response that arrived
+   * slightly after the timeout threshold — which is common under quota pressure when
+   * Vertex AI eventually returns a valid result after a long backoff.
+   *
+   * Example: `timeoutMs: 210000, graceMs: 60000`
+   * → waits up to 210s normally, then up to 60s more to capture a late success.
+   *
+   * Set to 0 (default) to disable — timeout retries fire immediately as before.
+   */
+  graceMs?: number;
+
+  /**
    * @deprecated Use `backoffMultiplier` instead. Will be removed in v2.0.
    * When true, equivalent to backoffMultiplier of 1.0 with linear scaling (delayMs * attempt).
    */
@@ -367,6 +385,7 @@ export const DEFAULT_RETRY_OPTIONS: Required<Omit<RetryOptions, 'incrementalBack
   jitter: true,
   timeoutMs: 45000,
   timeoutRetries: 2,
+  graceMs: 0,
 };
 
 // ============================================================

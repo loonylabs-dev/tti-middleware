@@ -559,8 +559,21 @@ describe('Retry Logic', () => {
       });
       expect(config).toEqual({
         maxRetries: 5, delayMs: 2000, backoffMultiplier: 3.0, maxDelayMs: 60000, jitter: false,
-        timeoutMs: 45000, timeoutRetries: 2,
+        timeoutMs: 45000, timeoutRetries: 2, graceMs: 0,
       });
+    });
+
+    it('should include graceMs: 0 in defaults', () => {
+      const config = provider.testResolveRetryConfig({ prompt: 'test' });
+      expect(config?.graceMs).toBe(0);
+    });
+
+    it('should forward custom graceMs', () => {
+      const config = provider.testResolveRetryConfig({
+        prompt: 'test',
+        retry: { graceMs: 60000 },
+      });
+      expect(config?.graceMs).toBe(60000);
     });
 
     it('should handle deprecated incrementalBackoff gracefully', () => {
@@ -576,7 +589,7 @@ describe('Retry Logic', () => {
   describe('calculateRetryDelay()', () => {
     const baseConfig = {
       maxRetries: 3, delayMs: 1000, backoffMultiplier: 2.0, maxDelayMs: 30000, jitter: false,
-      timeoutMs: 45000, timeoutRetries: 2,
+      timeoutMs: 45000, timeoutRetries: 2, graceMs: 0,
     };
 
     it('should return exponential delays without jitter', () => {
@@ -809,6 +822,137 @@ describe('Retry Logic', () => {
       expect(delays[2]).toBeLessThanOrEqual(4000);  // max: 1000 * 2^2
 
       sleepSpy.mockRestore();
+    });
+  });
+
+  // ============================================================
+  // GRACE WINDOW TESTS
+  // ============================================================
+
+  describe('grace window (graceMs)', () => {
+    it('should use result that arrives during grace period', async () => {
+      jest.useFakeTimers();
+      let resolveOperation!: (v: TTIResponse) => void;
+
+      provider.generateFn = () =>
+        new Promise<TTIResponse>((resolve) => {
+          resolveOperation = resolve;
+        });
+
+      const successResponse: TTIResponse = {
+        images: [{ base64: 'late-image', contentType: 'image/png' }],
+        metadata: { provider: 'test', model: 'test-model', duration: 240000 },
+        usage: { imagesGenerated: 1, modelId: 'test-model' },
+      };
+
+      // Start generation: timeout=100ms, grace=60ms
+      const resultPromise = provider.generate({
+        prompt: 'test',
+        retry: { maxRetries: 0, timeoutMs: 100, graceMs: 60, timeoutRetries: 0 },
+      });
+
+      // Primary timeout fires — enter grace
+      jest.advanceTimersByTime(100);
+      await Promise.resolve(); // flush microtasks
+
+      // Operation resolves during grace (50ms < 60ms grace)
+      jest.advanceTimersByTime(50);
+      resolveOperation(successResponse);
+      await Promise.resolve();
+
+      // Advance remaining time and flush
+      jest.advanceTimersByTime(20);
+      await Promise.resolve();
+
+      jest.useRealTimers();
+      const result = await resultPromise;
+
+      expect(result.images[0].base64).toBe('late-image');
+    });
+
+    it('should throw timeout error if operation misses grace period too', async () => {
+      jest.useFakeTimers();
+
+      provider.generateFn = () => new Promise<TTIResponse>(() => { /* never resolves */ });
+
+      const resultPromise = provider.generate({
+        prompt: 'test',
+        retry: { maxRetries: 0, timeoutMs: 100, graceMs: 60, timeoutRetries: 0 },
+      });
+
+      // Primary timeout fires
+      jest.advanceTimersByTime(100);
+      await Promise.resolve();
+      // Grace also expires
+      jest.advanceTimersByTime(60);
+      await Promise.resolve();
+
+      jest.useRealTimers();
+
+      await expect(resultPromise).rejects.toThrow('timeout:');
+      await expect(resultPromise).rejects.toThrow('grace period');
+    });
+
+    it('should not trigger grace when graceMs is 0 (backwards compat)', async () => {
+      jest.useFakeTimers();
+      let didResolve = false;
+      let resolveOperation!: (v: TTIResponse) => void;
+
+      provider.generateFn = () =>
+        new Promise<TTIResponse>((resolve) => {
+          resolveOperation = resolve;
+        });
+
+      const resultPromise = provider.generate({
+        prompt: 'test',
+        retry: { maxRetries: 0, timeoutMs: 100, graceMs: 0, timeoutRetries: 0 },
+      });
+
+      // Primary timeout fires — with graceMs=0 should reject immediately
+      jest.advanceTimersByTime(100);
+      await Promise.resolve();
+
+      // Resolve too late — should have no effect
+      resolveOperation({
+        images: [{ base64: 'ignored', contentType: 'image/png' }],
+        metadata: { provider: 'test', model: 'test-model', duration: 100 },
+        usage: { imagesGenerated: 1, modelId: 'test-model' },
+      });
+      didResolve = true;
+
+      jest.useRealTimers();
+
+      await expect(resultPromise).rejects.toThrow('timeout:');
+      expect(didResolve).toBe(true); // resolve was called but result discarded
+    });
+
+    it('should resolve immediately if operation completes before primary timeout', async () => {
+      jest.useFakeTimers();
+
+      const successResponse: TTIResponse = {
+        images: [{ base64: 'fast-image', contentType: 'image/png' }],
+        metadata: { provider: 'test', model: 'test-model', duration: 50 },
+        usage: { imagesGenerated: 1, modelId: 'test-model' },
+      };
+
+      provider.generateFn = () =>
+        new Promise<TTIResponse>((resolve) => {
+          setTimeout(() => resolve(successResponse), 50);
+        });
+
+      const resultPromise = provider.generate({
+        prompt: 'test',
+        retry: { maxRetries: 0, timeoutMs: 100, graceMs: 60, timeoutRetries: 0 },
+      });
+
+      // Operation resolves at 50ms — well before 100ms timeout
+      jest.advanceTimersByTime(60);
+      await Promise.resolve();
+
+      jest.useRealTimers();
+      const result = await resultPromise;
+
+      expect(result.images[0].base64).toBe('fast-image');
     });
   });
 });

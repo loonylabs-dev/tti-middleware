@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.0] - 2026-03-19
+
+### Added
+
+#### Grace period for timeout retries (`graceMs`)
+
+Added a new `graceMs` option to `RetryOptions` that prevents discarding a valid
+Vertex AI response that arrives slightly after the per-attempt timeout threshold.
+
+**The problem:** Under quota pressure, Vertex AI can take significantly longer than usual
+to respond. The existing `timeoutMs` mechanism would declare an attempt dead and start a
+new retry — but the original HTTP request was still running in the background. If Vertex
+eventually returned a valid image (which it was already billing for), the result was silently
+discarded and the retry budget was burned unnecessarily.
+
+**The fix:** When `graceMs > 0`, the timeout no longer rejects immediately. Instead a grace
+period starts: if the in-flight operation resolves successfully within `graceMs`, the result
+is used and no timeout retry is consumed. Only if the grace period also expires does the
+attempt fail and the retry loop advance.
+
+**Usage:**
+
+```typescript
+const response = await service.generate({
+  prompt: '...',
+  retry: {
+    maxRetries: 8,
+    timeoutMs: 210000,   // 3.5 min primary timeout
+    timeoutRetries: 1,
+    graceMs: 60000,      // NEW: up to 60s extra to catch a late-but-valid response
+  },
+});
+```
+
+**Logging:**
+- `[WARN] ... primary timeout after 210000ms, entering grace period (60000ms)` — grace started
+- `[INFO] ... completed during grace period` — late result captured, no retry needed
+- Existing timeout retry logs fire only if the grace period also expires
+
+**Backwards compatibility:** `graceMs` defaults to `0` — existing behaviour is unchanged.
+
+---
+
 ## [1.8.0] - 2026-03-14
 
 ### Fixed
