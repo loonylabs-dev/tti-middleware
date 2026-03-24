@@ -140,6 +140,28 @@ const GOOGLE_CLOUD_MODELS: ModelInfo[] = [
     pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
   },
 
+  // ── Imagen Capability model (Vertex AI editing / inpainting) ──
+  {
+    id: 'imagen-capability',
+    displayName: 'Imagen 3 Capability (Editing)',
+    capabilities: {
+      textToImage: false,
+      characterConsistency: false,
+      imageEditing: true,
+      maxImagesPerRequest: 4,
+    },
+    availableRegions: [
+      'europe-west1',
+      'europe-west2',
+      'europe-west3',
+      'europe-west4',
+      'europe-west9',
+      'us-central1',
+      'us-east4',
+    ],
+    pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
+  },
+
   // ── Gemini models (Vertex AI generateContent API) ──────────
   {
     id: 'gemini-flash-image',
@@ -195,6 +217,7 @@ const MODEL_ID_MAP: Record<string, string> = {
   'imagen-4': 'imagen-4.0-generate-001',
   'imagen-4-fast': 'imagen-4.0-fast-generate-001',
   'imagen-4-ultra': 'imagen-4.0-ultra-generate-001',
+  'imagen-capability': 'imagen-3.0-capability-001',
   'gemini-flash-image': 'gemini-2.5-flash-image',
   'gemini-pro-image': 'gemini-3-pro-image-preview',
   'gemini-flash-image-2': 'gemini-3.1-flash-image-preview',
@@ -352,11 +375,18 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
     });
 
     const isGeminiModel = GEMINI_API_MODELS.has(modelId);
-    const operationName = isGeminiModel ? 'Gemini API call' : 'Imagen API call';
+    const isEditRequest = !!request.baseImage;
+    const operationName = isEditRequest
+      ? 'Imagen edit API call'
+      : isGeminiModel
+        ? 'Gemini API call'
+        : 'Imagen API call';
 
     // Operation lambda reads currentRegion from closure
     const operation = () => {
-      if (isGeminiModel) {
+      if (isEditRequest) {
+        return this.editWithImagen(request, modelId, currentRegion);
+      } else if (isGeminiModel) {
         return this.generateWithGemini(request, modelId, currentRegion);
       } else {
         return this.generateWithImagen(request, modelId, currentRegion);
@@ -684,6 +714,110 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
       },
       usage,
     };
+  }
+
+  // ============================================================
+  // PRIVATE: IMAGEN EDITING / INPAINTING IMPLEMENTATION
+  // ============================================================
+
+  /** Maps our editMode values to the Vertex AI API constants */
+  private static readonly EDIT_MODE_MAP: Record<string, string> = {
+    'inpainting-insert': 'EDIT_MODE_INPAINT_INSERTION',
+    'inpainting-remove': 'EDIT_MODE_INPAINT_REMOVAL',
+    'background-swap': 'EDIT_MODE_BGSWAP',
+    'outpainting': 'EDIT_MODE_OUTPAINT',
+  };
+
+  private async editWithImagen(
+    request: TTIRequest,
+    modelId: string,
+    region: GoogleCloudRegion
+  ): Promise<TTIResponse> {
+    const startTime = Date.now();
+    const internalModelId = MODEL_ID_MAP[modelId];
+    this.lastUsedRegion = region;
+
+    try {
+      const { client, helpers } = await this.getAiplatformClient(region);
+
+      const endpoint = `projects/${this.config.projectId}/locations/${region}/publishers/google/models/${internalModelId}`;
+
+      // Build referenceImages array: [RAW base image, MASK image]
+      const referenceImages: unknown[] = [
+        {
+          referenceType: 'REFERENCE_TYPE_RAW',
+          referenceId: 1,
+          referenceImage: {
+            bytesBase64Encoded: request.baseImage!.base64,
+          },
+        },
+        {
+          referenceType: 'REFERENCE_TYPE_MASK',
+          referenceId: 2,
+          referenceImage: {
+            bytesBase64Encoded: request.maskImage!.base64,
+          },
+          maskImageConfig: {
+            maskMode: 'MASK_MODE_USER_PROVIDED',
+            dilation: request.maskDilation ?? 0.01,
+          },
+        },
+      ];
+
+      const instanceValue = {
+        prompt: request.prompt,
+        referenceImages,
+      };
+
+      const instance = helpers.toValue(instanceValue);
+
+      // Map editMode to Vertex AI constant, default to inpainting-insert
+      const editModeKey = request.editMode ?? 'inpainting-insert';
+      const vertexEditMode =
+        GoogleCloudTTIProvider.EDIT_MODE_MAP[editModeKey] ?? 'EDIT_MODE_INPAINT_INSERTION';
+
+      const parameterValue: Record<string, unknown> = {
+        editMode: vertexEditMode,
+        sampleCount: request.n || 1,
+        editConfig: {
+          baseSteps: (request.providerOptions?.baseSteps as number) ?? 35,
+        },
+      };
+
+      const parameters = helpers.toValue(parameterValue);
+
+      this.log('info', 'Sending Imagen edit request to Vertex AI', {
+        endpoint,
+        editMode: vertexEditMode,
+        dilation: request.maskDilation ?? 0.01,
+      });
+
+      const [response] = await client.predict({
+        endpoint,
+        instances: [instance],
+        parameters,
+      });
+
+      const duration = Date.now() - startTime;
+      this.log('info', `Imagen edit response received in ${duration}ms`, {
+        duration,
+        hasPredictions: !!response.predictions?.length,
+      });
+
+      if (!response.predictions || response.predictions.length === 0) {
+        throw new GenerationFailedError(
+          this.providerName,
+          'No images returned from Imagen edit API'
+        );
+      }
+
+      return this.processImagenResponse(response.predictions, helpers, modelId, duration);
+    } catch (error) {
+      if (error instanceof InvalidConfigError || error instanceof GenerationFailedError) {
+        throw error;
+      }
+      throw this.handleError(error as Error, 'during Imagen edit API call');
+    }
   }
 
   // ============================================================

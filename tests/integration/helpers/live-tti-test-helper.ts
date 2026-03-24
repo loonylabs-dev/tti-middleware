@@ -8,6 +8,7 @@
  *   TTI_INTEGRATION_TESTS=true npm run test:integration
  */
 
+import * as zlib from 'zlib';
 import { TTIRequest, TTIProvider, RetryOptions } from '../../../src/middleware/types';
 
 // ============================================================
@@ -183,6 +184,141 @@ export function validateImageResponse(response: {
   return response.images.every((img) => {
     return (img.base64 && img.base64.length > 0) || (img.url && img.url.length > 0);
   });
+}
+
+// ============================================================
+// PNG GENERATION UTILITIES (for inpainting tests)
+// ============================================================
+
+/**
+ * Create a chunk for a PNG file
+ */
+function createPNGChunk(type: string, data: Buffer): Buffer {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+
+  const typeBuffer = Buffer.from(type, 'ascii');
+  const body = Buffer.concat([typeBuffer, data]);
+
+  // CRC32 over type + data
+  let crc = 0xffffffff;
+  for (const byte of body) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i++) {
+      crc = (crc & 1) ? (0xedb88320 ^ (crc >>> 1)) : (crc >>> 1);
+    }
+  }
+  crc ^= 0xffffffff;
+
+  const crcBuffer = Buffer.alloc(4);
+  crcBuffer.writeUInt32BE(crc >>> 0, 0);
+  return Buffer.concat([length, body, crcBuffer]);
+}
+
+/**
+ * Generate a minimal PNG from raw RGB pixel data.
+ * @param width  Image width in pixels
+ * @param height Image height in pixels
+ * @param getPixel Returns [r, g, b] for each (x, y)
+ */
+export function generatePNG(
+  width: number,
+  height: number,
+  getPixel: (x: number, y: number) => [number, number, number]
+): Buffer {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const ihdrData = Buffer.alloc(13);
+  ihdrData.writeUInt32BE(width, 0);
+  ihdrData.writeUInt32BE(height, 4);
+  ihdrData.writeUInt8(8, 8);  // bit depth
+  ihdrData.writeUInt8(2, 9);  // color type: RGB
+  // compression, filter, interlace all 0
+  const ihdr = createPNGChunk('IHDR', ihdrData);
+
+  // Raw scanlines: filter byte (0) + RGB pixels per row
+  const rawRows = Buffer.alloc((1 + width * 3) * height);
+  let offset = 0;
+  for (let y = 0; y < height; y++) {
+    rawRows[offset++] = 0; // filter: None
+    for (let x = 0; x < width; x++) {
+      const [r, g, b] = getPixel(x, y);
+      rawRows[offset++] = r;
+      rawRows[offset++] = g;
+      rawRows[offset++] = b;
+    }
+  }
+
+  const compressed = zlib.deflateSync(rawRows);
+  const idat = createPNGChunk('IDAT', compressed);
+  const iend = createPNGChunk('IEND', Buffer.alloc(0));
+
+  return Buffer.concat([signature, ihdr, idat, iend]);
+}
+
+/**
+ * Create a solid-color PNG as base64
+ */
+export function createSolidColorPNG(
+  width: number,
+  height: number,
+  r: number,
+  g: number,
+  b: number
+): string {
+  return generatePNG(width, height, () => [r, g, b]).toString('base64');
+}
+
+/**
+ * Create a mask PNG (black background, white rectangle in center) as base64.
+ * White = area to inpaint, black = area to preserve.
+ */
+export function createCenterMaskPNG(
+  width: number,
+  height: number,
+  maskWidthRatio = 0.3,
+  maskHeightRatio = 0.3
+): string {
+  const maskX0 = Math.floor(width * (0.5 - maskWidthRatio / 2));
+  const maskX1 = Math.floor(width * (0.5 + maskWidthRatio / 2));
+  const maskY0 = Math.floor(height * (0.5 - maskHeightRatio / 2));
+  const maskY1 = Math.floor(height * (0.5 + maskHeightRatio / 2));
+
+  return generatePNG(width, height, (x, y) => {
+    const inMask = x >= maskX0 && x < maskX1 && y >= maskY0 && y < maskY1;
+    return inMask ? [255, 255, 255] : [0, 0, 0];
+  }).toString('base64');
+}
+
+export interface InpaintingTestOptions extends LiveTestRequestOptions {
+  baseImageBase64: string;
+  baseImageMimeType?: string;
+  maskBase64: string;
+  maskMimeType?: string;
+  editMode?: 'inpainting-insert' | 'inpainting-remove' | 'background-swap' | 'outpainting';
+  maskDilation?: number;
+}
+
+/**
+ * Build an inpainting test request
+ */
+export function buildInpaintingRequest(options: InpaintingTestOptions): TTIRequest {
+  return {
+    prompt: options.prompt ?? 'A bright red apple',
+    model: options.model ?? 'imagen-capability',
+    n: options.n ?? 1,
+    retry: options.retry ?? TEST_RETRY_CONFIG,
+    baseImage: {
+      base64: options.baseImageBase64,
+      mimeType: options.baseImageMimeType ?? 'image/png',
+    },
+    maskImage: {
+      base64: options.maskBase64,
+      mimeType: options.maskMimeType ?? 'image/png',
+    },
+    editMode: options.editMode ?? 'inpainting-insert',
+    maskDilation: options.maskDilation ?? 0.02,
+  };
 }
 
 /**

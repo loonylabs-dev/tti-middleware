@@ -182,6 +182,32 @@ export interface TTIRequest {
    */
   subjectDescription?: string;
 
+  // Image editing / inpainting (optional)
+  /**
+   * Base image to edit. When present, activates "edit mode" instead of text-to-image generation.
+   * Requires maskImage and a model that supports imageEditing capability.
+   */
+  baseImage?: TTIReferenceImage;
+  /**
+   * Mask image for inpainting. White pixels = regenerate, black pixels = preserve.
+   * Must have identical dimensions to baseImage.
+   * Required when baseImage is set.
+   */
+  maskImage?: TTIReferenceImage;
+  /**
+   * Mask dilation: expands the mask boundary to smooth hard edges (0.0–1.0, default 0.01).
+   * Useful when hand-drawn masks have jagged edges.
+   */
+  maskDilation?: number;
+  /**
+   * Edit operation to perform on the masked region.
+   * - 'inpainting-insert': add or replace content in the masked area (default)
+   * - 'inpainting-remove': remove content and fill with matching background
+   * - 'background-swap': replace background while preserving foreground
+   * - 'outpainting': extend image beyond its boundaries into the masked area
+   */
+  editMode?: 'inpainting-insert' | 'inpainting-remove' | 'background-swap' | 'outpainting';
+
   // Provider-specific options (escape hatch)
   /** Additional provider-specific options */
   providerOptions?: Record<string, unknown>;
