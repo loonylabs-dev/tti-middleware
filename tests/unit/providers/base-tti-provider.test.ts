@@ -62,6 +62,16 @@ class TestTTIProvider extends BaseTTIProvider {
           maxImagesPerRequest: 1,
         },
       },
+      {
+        id: 'test-model-edit',
+        displayName: 'Test Model with Image Editing',
+        capabilities: {
+          textToImage: false,
+          characterConsistency: false,
+          imageEditing: true,
+          maxImagesPerRequest: 4,
+        },
+      },
     ];
     this.generateFn = async () => ({
       images: [{ base64: 'test-image-data', contentType: 'image/png' }],
@@ -278,7 +288,7 @@ describe('BaseTTIProvider', () => {
   describe('listModels()', () => {
     it('should return available models', () => {
       const models = provider.listModels();
-      expect(models).toHaveLength(2);
+      expect(models).toHaveLength(3);
       expect(models[0].id).toBe('test-model');
     });
   });
@@ -352,6 +362,106 @@ describe('BaseTTIProvider', () => {
           subjectDescription: 'test',
         });
       }).toThrow(InvalidConfigError);
+    });
+
+    describe('inpainting validation', () => {
+      it('should pass for valid inpainting request', () => {
+        expect(() => {
+          provider.testValidateRequest({
+            prompt: 'Remove the extra arm',
+            model: 'test-model-edit',
+            baseImage: { base64: 'base64data' },
+            maskImage: { base64: 'maskdata' },
+          });
+        }).not.toThrow();
+      });
+
+      it('should throw when baseImage is set on model without imageEditing capability', () => {
+        expect(() => {
+          provider.testValidateRequest({
+            prompt: 'test',
+            model: 'test-model',
+            baseImage: { base64: 'base64data' },
+            maskImage: { base64: 'maskdata' },
+          });
+        }).toThrow(CapabilityNotSupportedError);
+      });
+
+      it('should throw when baseImage has empty base64', () => {
+        expect(() => {
+          provider.testValidateRequest({
+            prompt: 'test',
+            model: 'test-model-edit',
+            baseImage: { base64: '' },
+            maskImage: { base64: 'maskdata' },
+          });
+        }).toThrow(InvalidConfigError);
+      });
+
+      it('should throw when maskImage is missing', () => {
+        expect(() => {
+          provider.testValidateRequest({
+            prompt: 'test',
+            model: 'test-model-edit',
+            baseImage: { base64: 'base64data' },
+          });
+        }).toThrow(InvalidConfigError);
+      });
+
+      it('should throw when maskImage has empty base64', () => {
+        expect(() => {
+          provider.testValidateRequest({
+            prompt: 'test',
+            model: 'test-model-edit',
+            baseImage: { base64: 'base64data' },
+            maskImage: { base64: '' },
+          });
+        }).toThrow(InvalidConfigError);
+      });
+
+      it('should throw when maskDilation is out of range', () => {
+        expect(() => {
+          provider.testValidateRequest({
+            prompt: 'test',
+            model: 'test-model-edit',
+            baseImage: { base64: 'base64data' },
+            maskImage: { base64: 'maskdata' },
+            maskDilation: 1.5,
+          });
+        }).toThrow(InvalidConfigError);
+
+        expect(() => {
+          provider.testValidateRequest({
+            prompt: 'test',
+            model: 'test-model-edit',
+            baseImage: { base64: 'base64data' },
+            maskImage: { base64: 'maskdata' },
+            maskDilation: -0.1,
+          });
+        }).toThrow(InvalidConfigError);
+      });
+
+      it('should accept maskDilation at boundary values', () => {
+        expect(() => {
+          provider.testValidateRequest({
+            prompt: 'test',
+            model: 'test-model-edit',
+            baseImage: { base64: 'base64data' },
+            maskImage: { base64: 'maskdata' },
+            maskDilation: 0,
+          });
+        }).not.toThrow();
+
+        expect(() => {
+          provider.testValidateRequest({
+            prompt: 'test',
+            model: 'test-model-edit',
+            baseImage: { base64: 'base64data' },
+            maskImage: { base64: 'maskdata' },
+            maskDilation: 1,
+          });
+        }).not.toThrow();
+      });
     });
   });
 

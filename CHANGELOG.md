@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.0] - 2026-03-24
+
+### Added
+
+#### Inpainting / Image Editing support (`imagen-capability` model)
+
+Added mask-based inpainting via the Vertex AI Imagen Capability API
+(`imagen-3.0-capability-001`). This allows fixing specific areas of a generated
+image without regenerating the entire scene.
+
+**New fields on `TTIRequest`:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `baseImage` | `TTIReferenceImage` | The image to edit. Presence activates edit mode. |
+| `maskImage` | `TTIReferenceImage` | Mask: white = regenerate, black = preserve. Same dimensions as `baseImage`. |
+| `maskDilation` | `number` | Expand mask boundary (0.0–1.0, default 0.01). Smooths hard edges. |
+| `editMode` | `string` | `'inpainting-insert'` (default), `'inpainting-remove'`, `'background-swap'`, `'outpainting'` |
+
+**New model `imagen-capability`:**
+
+```typescript
+// Fix a generation error without re-generating the whole image:
+const fixed = await service.generate({
+  model: 'imagen-capability',
+  prompt: 'Remove the extra arm and fill with matching forest background',
+  baseImage: { base64: originalImageBase64, mimeType: 'image/png' },
+  maskImage:  { base64: maskBase64,          mimeType: 'image/png' },
+  editMode: 'inpainting-remove',
+});
+```
+
+**How the mask works:**
+- White pixels in the mask = area the model will regenerate
+- Black pixels = area that is preserved exactly as-is
+- Mask dimensions must be identical to base image dimensions (API error otherwise)
+
+**Provider support:**
+- ✅ Google Cloud (`imagen-capability`) — pixel-precise, dedicated Vertex AI endpoint
+- ❌ Gemini models (`gemini-flash-image` etc.) — do NOT support mask-based inpainting
+
+**Backwards compatibility:** All existing requests (no `baseImage`) are completely
+unaffected. The new fields are optional.
+
+---
+
 ## [1.9.0] - 2026-03-19
 
 ### Added

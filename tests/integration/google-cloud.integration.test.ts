@@ -24,6 +24,9 @@ import {
   validateLiveTTIEnvironment,
   buildLiveTestRequest,
   buildCharacterConsistencyRequest,
+  buildInpaintingRequest,
+  createSolidColorPNG,
+  createCenterMaskPNG,
   logLiveTestStart,
   logLiveTestResult,
   validateImageResponse,
@@ -415,6 +418,94 @@ describeLive('Google Cloud TTI Provider - Integration Tests', () => {
 // ============================================================
 // SKIP MESSAGE
 // ============================================================
+
+// ============================================================
+// IMAGEN CAPABILITY — INPAINTING TESTS
+// ============================================================
+
+describeLive('Imagen Capability (Inpainting)', () => {
+  let service: TTIService;
+
+  beforeAll(() => {
+    validateLiveTTIEnvironment();
+    const provider = new GoogleCloudTTIProvider();
+    service = new TTIService();
+    service.registerProvider(provider);
+  });
+
+  itLive(
+    'should insert content into masked area of a white image',
+    async () => {
+      logLiveTestStart('Imagen Capability - Inpainting Insert (white base + center mask)');
+
+      // 512x512 light-gray base image (something clearly editable)
+      const baseImageBase64 = createSolidColorPNG(512, 512, 220, 220, 220);
+      // Mask: black everywhere, white 30% rectangle in center → that's where the model paints
+      const maskBase64 = createCenterMaskPNG(512, 512, 0.3, 0.3);
+
+      const request = buildInpaintingRequest({
+        prompt: 'A bright red apple with a green leaf, photorealistic, centered',
+        baseImageBase64,
+        maskBase64,
+        editMode: 'inpainting-insert',
+        maskDilation: 0.02,
+      });
+
+      const response = await service.generate(request);
+
+      expect(response).toBeDefined();
+      expect(response.images).toBeDefined();
+      expect(response.images.length).toBeGreaterThan(0);
+      expect(response.metadata.provider).toBe(TTIProvider.GOOGLE_CLOUD);
+      expect(response.metadata.model).toBe('imagen-capability');
+      expect(validateImageResponse(response)).toBe(true);
+
+      const image = response.images[0];
+      expect(image.base64).toBeDefined();
+      expect(isValidBase64Image(image.base64!)).toBe(true);
+
+      logLiveTestResult({
+        model: response.metadata.model,
+        region: response.metadata.region,
+        duration: response.metadata.duration,
+        imagesGenerated: response.usage.imagesGenerated,
+      });
+    },
+    TTI_EXTENDED_TIMEOUT
+  );
+
+  itLive(
+    'should remove content from masked area',
+    async () => {
+      logLiveTestStart('Imagen Capability - Inpainting Remove (center mask)');
+
+      // Solid blue base image — mask will remove / replace center with matching background
+      const baseImageBase64 = createSolidColorPNG(512, 512, 100, 149, 237); // cornflower blue
+      const maskBase64 = createCenterMaskPNG(512, 512, 0.25, 0.25);
+
+      const request = buildInpaintingRequest({
+        prompt: 'smooth blue background, no objects, seamless',
+        baseImageBase64,
+        maskBase64,
+        editMode: 'inpainting-remove',
+        maskDilation: 0.01,
+      });
+
+      const response = await service.generate(request);
+
+      expect(response.images.length).toBeGreaterThan(0);
+      expect(validateImageResponse(response)).toBe(true);
+
+      logLiveTestResult({
+        model: response.metadata.model,
+        region: response.metadata.region,
+        duration: response.metadata.duration,
+        imagesGenerated: response.usage.imagesGenerated,
+      });
+    },
+    TTI_EXTENDED_TIMEOUT
+  );
+});
 
 if (process.env.TTI_INTEGRATION_TESTS !== 'true') {
   describe('Google Cloud TTI Integration Tests', () => {

@@ -163,6 +163,28 @@ describe('GoogleCloudTTIProvider', () => {
       expect(geminiFlash2?.capabilities.maxImagesPerRequest).toBe(1);
     });
 
+    it('should include imagen-capability model for inpainting', () => {
+      const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
+      const models = provider.listModels();
+      const capability = models.find((m) => m.id === 'imagen-capability');
+
+      expect(capability).toBeDefined();
+      expect(capability?.displayName).toBe('Imagen 3 Capability (Editing)');
+      expect(capability?.capabilities.imageEditing).toBe(true);
+      expect(capability?.capabilities.textToImage).toBe(false);
+      expect(capability?.capabilities.characterConsistency).toBe(false);
+      expect(capability?.capabilities.maxImagesPerRequest).toBe(4);
+    });
+
+    it('should indicate imagen-capability supports EU regions', () => {
+      const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
+      const models = provider.listModels();
+      const capability = models.find((m) => m.id === 'imagen-capability');
+
+      expect(capability?.availableRegions).toContain('europe-west4');
+      expect(capability?.availableRegions).toContain('europe-west3');
+    });
+
     it('should require global endpoint for gemini-flash-image-2 (preview model)', () => {
       const provider = new GoogleCloudTTIProvider({ projectId: 'test' });
       const models = provider.listModels();

@@ -269,6 +269,37 @@ export abstract class BaseTTIProvider implements ITTIProvider {
       throw new InvalidConfigError(this.providerName, 'Prompt cannot be empty');
     }
 
+    // If baseImage is provided, validate inpainting requirements
+    if (request.baseImage) {
+      if (!request.baseImage.base64 || request.baseImage.base64.trim().length === 0) {
+        throw new InvalidConfigError(this.providerName, 'baseImage has empty base64 data');
+      }
+
+      const modelId = request.model || this.getDefaultModel();
+      if (!this.modelSupportsCapability(modelId, 'imageEditing')) {
+        throw new CapabilityNotSupportedError(this.providerName, 'imageEditing', modelId);
+      }
+
+      if (!request.maskImage) {
+        throw new InvalidConfigError(
+          this.providerName,
+          'maskImage is required when baseImage is set'
+        );
+      }
+      if (!request.maskImage.base64 || request.maskImage.base64.trim().length === 0) {
+        throw new InvalidConfigError(this.providerName, 'maskImage has empty base64 data');
+      }
+
+      if (request.maskDilation !== undefined) {
+        if (request.maskDilation < 0 || request.maskDilation > 1) {
+          throw new InvalidConfigError(
+            this.providerName,
+            'maskDilation must be between 0.0 and 1.0'
+          );
+        }
+      }
+    }
+
     // If reference images are provided, validate them
     if (request.referenceImages && request.referenceImages.length > 0) {
       const modelId = request.model || this.getDefaultModel();

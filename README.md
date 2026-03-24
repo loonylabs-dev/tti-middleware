@@ -44,6 +44,7 @@
   - **Eden AI**: Aggregator with access to OpenAI, Stability AI, Replicate (experimental)
   - **IONOS**: German cloud provider with OpenAI-compatible API (experimental)
 - **Character Consistency**: Generate consistent characters across multiple images (perfect for children's book illustrations)
+- **Inpainting**: Fix specific areas of a generated image without regenerating the entire scene — via Vertex AI `imagen-capability` model
 - **GDPR/DSGVO Compliance**: Built-in EU region support with automatic fallback
 - **Region Rotation**: Opt-in region rotation on quota errors (429) for Google Cloud — rotate through regions instead of retrying the same exhausted region
 - **Retry Logic**: Exponential backoff with jitter for transient errors (429, 408, 5xx, timeouts)
