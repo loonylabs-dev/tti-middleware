@@ -507,6 +507,110 @@ describeLive('Imagen Capability (Inpainting)', () => {
   );
 });
 
+// ============================================================
+// IMAGEN CAPABILITY — MASK REFERENCE IMAGES TESTS
+// ============================================================
+
+describeLive('Imagen Capability (Mask Reference Images)', () => {
+  let service: TTIService;
+
+  beforeAll(() => {
+    validateLiveTTIEnvironment();
+    const provider = new GoogleCloudTTIProvider();
+    service = new TTIService();
+    service.registerProvider(provider);
+  });
+
+  itLive(
+    'should insert a subject from a reference image into the masked area',
+    async () => {
+      logLiveTestStart('Imagen Capability - Inpainting with subject reference (person)');
+
+      // Gray base image — the subject reference will be inserted into the center mask
+      const baseImageBase64 = createSolidColorPNG(512, 512, 200, 200, 200);
+      const maskBase64 = createCenterMaskPNG(512, 512, 0.4, 0.6);
+      // Use the base image itself as a stand-in reference (same solid gray).
+      // In a real scenario this would be the actual character image.
+      const subjectRefBase64 = createSolidColorPNG(256, 256, 180, 100, 60);
+
+      const request = buildInpaintingRequest({
+        prompt: 'A person standing in a bright forest clearing, photorealistic',
+        baseImageBase64,
+        maskBase64,
+        editMode: 'inpainting-insert',
+        maskDilation: 0.02,
+        maskReferenceImages: [
+          {
+            base64: subjectRefBase64,
+            mimeType: 'image/png',
+            subjectType: 'person',
+          },
+        ],
+      });
+
+      const response = await service.generate(request);
+
+      expect(response).toBeDefined();
+      expect(response.images).toBeDefined();
+      expect(response.images.length).toBeGreaterThan(0);
+      expect(response.metadata.provider).toBe(TTIProvider.GOOGLE_CLOUD);
+      expect(response.metadata.model).toBe('imagen-capability');
+      expect(validateImageResponse(response)).toBe(true);
+
+      const image = response.images[0];
+      expect(image.base64).toBeDefined();
+      expect(isValidBase64Image(image.base64!)).toBe(true);
+
+      logLiveTestResult({
+        model: response.metadata.model,
+        region: response.metadata.region,
+        duration: response.metadata.duration,
+        imagesGenerated: response.usage.imagesGenerated,
+      });
+    },
+    TTI_EXTENDED_TIMEOUT
+  );
+
+  itLive(
+    'should accept maskReferenceImages with default subjectType',
+    async () => {
+      logLiveTestStart('Imagen Capability - Inpainting with subject reference (default type)');
+
+      const baseImageBase64 = createSolidColorPNG(512, 512, 220, 220, 220);
+      const maskBase64 = createCenterMaskPNG(512, 512, 0.35, 0.35);
+      const subjectRefBase64 = createSolidColorPNG(256, 256, 80, 130, 200);
+
+      const request = buildInpaintingRequest({
+        prompt: 'A small ceramic vase with blue glaze, centered, studio lighting',
+        baseImageBase64,
+        maskBase64,
+        editMode: 'inpainting-insert',
+        maskDilation: 0.01,
+        maskReferenceImages: [
+          {
+            base64: subjectRefBase64,
+            mimeType: 'image/png',
+            // subjectType omitted → defaults to 'default'
+          },
+        ],
+      });
+
+      const response = await service.generate(request);
+
+      expect(response.images.length).toBeGreaterThan(0);
+      expect(validateImageResponse(response)).toBe(true);
+
+      logLiveTestResult({
+        model: response.metadata.model,
+        region: response.metadata.region,
+        duration: response.metadata.duration,
+        imagesGenerated: response.usage.imagesGenerated,
+      });
+    },
+    TTI_EXTENDED_TIMEOUT
+  );
+});
+
 if (process.env.TTI_INTEGRATION_TESTS !== 'true') {
   describe('Google Cloud TTI Integration Tests', () => {
     it('SKIPPED - Set TTI_INTEGRATION_TESTS=true to run', () => {

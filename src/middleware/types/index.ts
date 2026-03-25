@@ -153,6 +153,32 @@ export interface TTIReferenceImage {
 }
 
 /**
+ * Subject type hint for mask reference images.
+ * Helps the model understand what kind of subject is shown in the reference image.
+ * - 'person'  — a human character
+ * - 'animal'  — an animal or creature
+ * - 'product' — an object, product, or item
+ * - 'default' — let the model decide (fallback)
+ */
+export type TTISubjectType = 'person' | 'animal' | 'product' | 'default';
+
+/**
+ * Reference image for mask-based inpainting (subject reference).
+ * Used with maskReferenceImages to guide what the model inserts into the masked area.
+ */
+export interface TTIMaskReferenceImage {
+  /** Base64-encoded image data of the subject to insert */
+  base64: string;
+  /** MIME type of the image (e.g., 'image/png', 'image/jpeg') */
+  mimeType?: string;
+  /**
+   * Subject type hint for the model.
+   * Defaults to 'default' if omitted.
+   */
+  subjectType?: TTISubjectType;
+}
+
+/**
  * Unified TTI generation request
  * Works for both simple text-to-image and character consistency
  */
@@ -207,6 +233,14 @@ export interface TTIRequest {
    * - 'outpainting': extend image beyond its boundaries into the masked area
    */
   editMode?: 'inpainting-insert' | 'inpainting-remove' | 'background-swap' | 'outpainting';
+  /**
+   * Optional subject reference images for mask-based inpainting.
+   * Only valid when baseImage and maskImage are set.
+   * Each entry guides the model to insert a specific subject into the masked area
+   * (e.g., "place the character from this reference image into the mask").
+   * Only supported by the 'imagen-capability' model.
+   */
+  maskReferenceImages?: TTIMaskReferenceImage[];
 
   // Provider-specific options (escape hatch)
   /** Additional provider-specific options */

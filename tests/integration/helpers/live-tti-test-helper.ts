@@ -297,6 +297,7 @@ export interface InpaintingTestOptions extends LiveTestRequestOptions {
   maskMimeType?: string;
   editMode?: 'inpainting-insert' | 'inpainting-remove' | 'background-swap' | 'outpainting';
   maskDilation?: number;
+  maskReferenceImages?: Array<{ base64: string; mimeType?: string; subjectType?: import('../../../src/middleware/types').TTISubjectType }>;
 }
 
 /**
@@ -318,6 +319,7 @@ export function buildInpaintingRequest(options: InpaintingTestOptions): TTIReque
     },
     editMode: options.editMode ?? 'inpainting-insert',
     maskDilation: options.maskDilation ?? 0.02,
+    ...(options.maskReferenceImages ? { maskReferenceImages: options.maskReferenceImages } : {}),
   };
 }
 

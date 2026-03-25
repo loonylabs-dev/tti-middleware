@@ -298,6 +298,25 @@ export abstract class BaseTTIProvider implements ITTIProvider {
           );
         }
       }
+
+      if (request.maskReferenceImages && request.maskReferenceImages.length > 0) {
+        for (let i = 0; i < request.maskReferenceImages.length; i++) {
+          const ref = request.maskReferenceImages[i];
+          if (!ref.base64 || ref.base64.trim().length === 0) {
+            throw new InvalidConfigError(
+              this.providerName,
+              `maskReferenceImages[${i}] has empty base64 data`
+            );
+          }
+        }
+      }
+    }
+
+    if (request.maskReferenceImages && request.maskReferenceImages.length > 0 && !request.baseImage) {
+      throw new InvalidConfigError(
+        this.providerName,
+        'maskReferenceImages requires baseImage to be set'
+      );
     }
 
     // If reference images are provided, validate them

@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.11.0] - 2026-03-25
+
+### Added
+
+#### Mask reference images for guided inpainting (`maskReferenceImages`)
+
+Extended the `imagen-capability` inpainting model to accept optional subject
+reference images alongside a mask. This allows guiding the model on *what* to
+insert into the masked area — e.g. "place the character from this photo into
+the masked region" — rather than relying on the text prompt alone.
+
+**New field on `TTIRequest`:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `maskReferenceImages` | `TTIMaskReferenceImage[]` | Subject reference images for guided inpainting. Only valid when `baseImage` is set. |
+
+**New types:**
+
+```typescript
+export type TTISubjectType = 'person' | 'animal' | 'product' | 'default';
+
+export interface TTIMaskReferenceImage {
+  base64: string;
+  mimeType?: string;
+  subjectType?: TTISubjectType;  // defaults to 'default'
+}
+```
+
+**Usage example:**
+
+```typescript
+const result = await service.generate({
+  model: 'imagen-capability',
+  prompt: 'The character standing in a bright forest clearing, photorealistic',
+  baseImage:  { base64: sceneBase64,     mimeType: 'image/png' },
+  maskImage:  { base64: maskBase64,      mimeType: 'image/png' },
+  editMode: 'inpainting-insert',
+  maskReferenceImages: [
+    {
+      base64: characterRefBase64,
+      mimeType: 'image/png',
+      subjectType: 'person',
+    },
+  ],
+});
+```
+
+**Subject types (provider-agnostic):**
+- `'person'` — a human character
+- `'animal'` — an animal or creature
+- `'product'` — an object, item, or product
+- `'default'` — let the model decide (safe fallback)
+
+**Notes:**
+- `maskReferenceImages` requires `baseImage` to be set (validation error otherwise)
+- Only meaningful with `editMode: 'inpainting-insert'` (not for removal/outpainting)
+- Internally maps to Vertex AI `REFERENCE_TYPE_SUBJECT` entries appended after the RAW and MASK entries
+- Only supported by the `imagen-capability` model (Gemini models do NOT support this)
+
+**Backwards compatibility:** All existing inpainting requests without `maskReferenceImages` are completely unaffected.
+
+---
+
 ## [1.10.0] - 2026-03-24
 
 ### Added

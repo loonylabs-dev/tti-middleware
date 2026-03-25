@@ -728,6 +728,13 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
     'outpainting': 'EDIT_MODE_OUTPAINT',
   };
 
+  private static readonly SUBJECT_TYPE_MAP: Record<string, string> = {
+    person: 'SUBJECT_TYPE_PERSON',
+    animal: 'SUBJECT_TYPE_ANIMAL',
+    product: 'SUBJECT_TYPE_PRODUCT',
+    default: 'SUBJECT_TYPE_DEFAULT',
+  };
+
   private async editWithImagen(
     request: TTIRequest,
     modelId: string,
@@ -763,6 +770,25 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
           },
         },
       ];
+
+      // Append optional subject reference images for guided inpainting
+      if (request.maskReferenceImages && request.maskReferenceImages.length > 0) {
+        for (const [i, ref] of request.maskReferenceImages.entries()) {
+          const subjectType =
+            GoogleCloudTTIProvider.SUBJECT_TYPE_MAP[ref.subjectType ?? 'default'] ??
+            'SUBJECT_TYPE_DEFAULT';
+          referenceImages.push({
+            referenceType: 'REFERENCE_TYPE_SUBJECT',
+            referenceId: 3 + i,
+            referenceImage: {
+              bytesBase64Encoded: ref.base64,
+            },
+            subjectImageConfig: {
+              subjectType,
+            },
+          });
+        }
+      }
 
       const instanceValue = {
         prompt: request.prompt,
