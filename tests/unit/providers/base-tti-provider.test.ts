@@ -462,69 +462,6 @@ describe('BaseTTIProvider', () => {
           });
         }).not.toThrow();
       });
-
-      it('should pass for valid inpainting request with maskReferenceImages', () => {
-        expect(() => {
-          provider.testValidateRequest({
-            prompt: 'Insert the character into the masked area',
-            model: 'test-model-edit',
-            baseImage: { base64: 'base64data' },
-            maskImage: { base64: 'maskdata' },
-            maskReferenceImages: [
-              { base64: 'refdata', subjectType: 'person' },
-            ],
-          });
-        }).not.toThrow();
-      });
-
-      it('should pass for maskReferenceImages with no subjectType (defaults to default)', () => {
-        expect(() => {
-          provider.testValidateRequest({
-            prompt: 'Insert the character',
-            model: 'test-model-edit',
-            baseImage: { base64: 'base64data' },
-            maskImage: { base64: 'maskdata' },
-            maskReferenceImages: [{ base64: 'refdata' }],
-          });
-        }).not.toThrow();
-      });
-
-      it('should pass for maskReferenceImages with multiple entries', () => {
-        expect(() => {
-          provider.testValidateRequest({
-            prompt: 'Insert both characters',
-            model: 'test-model-edit',
-            baseImage: { base64: 'base64data' },
-            maskImage: { base64: 'maskdata' },
-            maskReferenceImages: [
-              { base64: 'refdata1', subjectType: 'person' },
-              { base64: 'refdata2', subjectType: 'animal' },
-            ],
-          });
-        }).not.toThrow();
-      });
-
-      it('should throw when maskReferenceImages entry has empty base64', () => {
-        expect(() => {
-          provider.testValidateRequest({
-            prompt: 'test',
-            model: 'test-model-edit',
-            baseImage: { base64: 'base64data' },
-            maskImage: { base64: 'maskdata' },
-            maskReferenceImages: [{ base64: '' }],
-          });
-        }).toThrow(InvalidConfigError);
-      });
-
-      it('should throw when maskReferenceImages is set without baseImage', () => {
-        expect(() => {
-          provider.testValidateRequest({
-            prompt: 'test',
-            model: 'test-model-edit',
-            maskReferenceImages: [{ base64: 'refdata' }],
-          });
-        }).toThrow(InvalidConfigError);
-      });
     });
   });
 

@@ -267,33 +267,6 @@ describe('GoogleCloudTTIProvider', () => {
       expect(map['animal']).toBe('SUBJECT_TYPE_ANIMAL_COMPANION');
     });
 
-    it('should map person/product to correct Vertex AI constants', () => {
-      const map = (GoogleCloudTTIProvider as unknown as { SUBJECT_TYPE_MAP: Record<string, string> })
-        .SUBJECT_TYPE_MAP;
-      expect(map['person']).toBe('SUBJECT_TYPE_PERSON');
-      expect(map['product']).toBe('SUBJECT_TYPE_PRODUCT');
-    });
-  });
-
-  describe('TTIMaskReferenceImage type', () => {
-    it('should accept subjectDescription field', () => {
-      // Compile-time type check: TTIMaskReferenceImage must have subjectDescription
-      // This test fails to compile if the field is missing from the interface.
-      const ref: import('../../../src/middleware/types').TTIMaskReferenceImage = {
-        base64: 'data',
-        subjectType: 'person',
-        subjectDescription: 'a woman with curly red hair, wearing a blue jacket',
-      };
-      expect(ref.subjectDescription).toBeDefined();
-    });
-
-    it('should be valid without subjectDescription (optional field)', () => {
-      const ref: import('../../../src/middleware/types').TTIMaskReferenceImage = {
-        base64: 'data',
-        subjectType: 'person',
-      };
-      expect(ref.subjectDescription).toBeUndefined();
-    });
   });
 
   describe('getDefaultModel()', () => {

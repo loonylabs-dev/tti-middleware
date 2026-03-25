@@ -45,7 +45,7 @@
   - **Eden AI**: Aggregator with access to OpenAI, Stability AI, Replicate (experimental)
   - **IONOS**: German cloud provider with OpenAI-compatible API (experimental)
 - **Character Consistency**: Generate consistent characters across multiple images (perfect for children's book illustrations)
-- **Inpainting**: Fix specific areas of a generated image without regenerating the entire scene — via Vertex AI `imagen-capability` model. Supports optional subject reference images (`maskReferenceImages`) to guide *what* gets inserted into the masked area
+- **Inpainting**: Fix specific areas of a generated image without regenerating the entire scene — via Vertex AI `imagen-capability` model.
 - **GDPR/DSGVO Compliance**: Built-in EU region support with automatic fallback
 - **Region Rotation**: Opt-in region rotation on quota errors (429) for Google Cloud — rotate through regions instead of retrying the same exhausted region
 - **Retry Logic**: Exponential backoff with jitter for transient errors (429, 408, 5xx, timeouts)
@@ -331,41 +331,6 @@ const result = await service.generate({
 - Black pixels = area preserved exactly as-is
 - Mask must have identical dimensions to `baseImage`
 
-### Guided Inpainting with Subject References
-
-Use `maskReferenceImages` to provide a reference photo of the subject to insert — e.g. "place **this** character into the masked region":
-
-```typescript
-const result = await service.generate({
-  model: 'imagen-capability',
-  prompt: 'The character standing in a bright forest clearing, photorealistic',
-  baseImage:  { base64: sceneBase64,        mimeType: 'image/png' },
-  maskImage:  { base64: maskBase64,         mimeType: 'image/png' },
-  editMode: 'inpainting-insert',
-  maskReferenceImages: [
-    {
-      base64: characterRefBase64,
-      mimeType: 'image/png',
-      subjectType: 'person',   // 'person' | 'animal' | 'product' | 'default'
-    },
-  ],
-});
-```
-
-**Subject types:**
-
-| `subjectType` | Use case |
-|---------------|----------|
-| `'person'` | Human character |
-| `'animal'` | Animal or creature |
-| `'product'` | Object, item, product |
-| `'default'` | Let the model decide (safe fallback) |
-
-**Notes:**
-- `maskReferenceImages` only works with `editMode: 'inpainting-insert'`
-- Gemini models do **not** support mask-based inpainting or `maskReferenceImages`
-- `maskReferenceImages` without `baseImage` throws a validation error
-
 ### Supported `editMode` Values
 
 | Value | Description |
@@ -442,20 +407,11 @@ interface TTIRequest {
   maskImage?: TTIReferenceImage;   // Required when baseImage is set
   maskDilation?: number;           // 0.0–1.0, default 0.01
   editMode?: 'inpainting-insert' | 'inpainting-remove' | 'background-swap' | 'outpainting';
-  maskReferenceImages?: TTIMaskReferenceImage[];  // Subject refs for guided inpainting
 
   // Retry configuration
   retry?: boolean | RetryOptions;  // true (default), false, or custom config
 
   providerOptions?: Record<string, unknown>;
-}
-
-type TTISubjectType = 'person' | 'animal' | 'product' | 'default';
-
-interface TTIMaskReferenceImage {
-  base64: string;
-  mimeType?: string;
-  subjectType?: TTISubjectType;  // defaults to 'default'
 }
 ```
 

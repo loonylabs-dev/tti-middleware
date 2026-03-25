@@ -9,51 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.12.0] - 2026-03-25
 
-### References
+### Removed
+- **Guided inpainting**: Removed `maskReferenceImages` and related logic as the Vertex AI API does not support combining `RAW` + `MASK` with `SUBJECT` references in a single request.
+- **Types**: Removed `TTIMaskReferenceImage` and `TTISubjectType` from public API.
 
-- [Vertex AI — Insert objects into an image using inpaint](https://cloud.google.com/vertex-ai/generative-ai/docs/image/edit-insert-objects)
-- [Vertex AI — Imagen API edit reference](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/imagen-api-edit)
-- [Vertex AI — Subject customization](https://cloud.google.com/vertex-ai/generative-ai/docs/image/subject-customization)
-
-### Fixed
-
-#### Guided inpainting: correct Vertex AI API usage for `maskReferenceImages`
-
-Four bugs in `editWithImagen` that caused the subject reference image to be ignored:
-
-**Bug 1 — SUBJECT `referenceId` started at 3 but prompt never referenced `[3]`**
-The `referenceId` layout is correct per Vertex AI docs (RAW=1, MASK=2, SUBJECT=3 — each
-distinct). However, the prompt never included `[3]`, so the model silently ignored the
-SUBJECT reference entirely. Combined with Bug 3 (auto-inject), this is now resolved.
-
-Confirmed layout (matches official Vertex AI docs):
-```
-RAW    referenceId: 1   MASK   referenceId: 2   SUBJECT referenceId: 3 → prompt: [3]
-```
-
-**Bug 2 — Missing `subjectDescription` in `subjectImageConfig`**
-Google confirmed `subjectDescription` is more important than the image pixels — without it
-the model barely uses the reference. Added `subjectDescription?: string` to `TTIMaskReferenceImage`
-and now passes it into `subjectImageConfig` when present.
-
-**Bug 3 — Prompt `[N]` reference not enforced**
-The model silently ignores any `REFERENCE_TYPE_SUBJECT` not cited as `[N]` in the prompt.
-The middleware now auto-appends missing `[N]` tokens and logs a warning so callers know to
-include them explicitly for best results.
-
-**Bug 4 — Wrong Vertex AI constant for `animal` subject type**
-`SUBJECT_TYPE_ANIMAL` → corrected to `SUBJECT_TYPE_ANIMAL_COMPANION` (official API value).
-
-### Added
-
-- `TTIMaskReferenceImage.subjectDescription?: string` — visual description of the subject
-  (e.g. `"a woman with curly red hair, wearing a blue jacket"`). Strongly recommended when
-  using `maskReferenceImages` for guided inpainting.
-- Integration test `'should insert character reference image next to dog at door (real assets)'`
-  that uses real image files from `output/mask-inpainting/` and saves the result for visual inspection.
-- `createRegionMaskPNG()` helper in `live-tti-test-helper` — creates a mask for an arbitrary
-  rectangular region (not just the center) by specifying x/y boundary ratios.
-- `loadImageAsBase64()` / `saveOutputImage()` helpers for real-image integration tests.
+### Changed
+- **Inpainting**: Restored standard reference ID numbering (`RAW=1`, `MASK=2`) for better compatibility.
+- **Validation**: Cleaned up internal validation logic for image editing.
 
 ---
 

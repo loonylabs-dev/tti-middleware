@@ -764,7 +764,6 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
       // See: https://cloud.google.com/vertex-ai/generative-ai/docs/image/edit-insert-objects
       const RAW_REFERENCE_ID = 1;
       const MASK_REFERENCE_ID = 2;
-      const SUBJECT_REFERENCE_ID_START = 3;
 
       const referenceImages: unknown[] = [
         {
@@ -787,54 +786,8 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
         },
       ];
 
-      // Append optional subject reference images for guided inpainting.
-      // Each subject gets a unique referenceId starting at SUBJECT_REFERENCE_ID_START.
-      // The model ONLY uses a subject reference if [referenceId] appears in the prompt.
-      let effectivePrompt = request.prompt;
-      if (request.maskReferenceImages && request.maskReferenceImages.length > 0) {
-        const missingPromptRefs: number[] = [];
-
-        for (const [i, ref] of request.maskReferenceImages.entries()) {
-          const refId = SUBJECT_REFERENCE_ID_START + i;
-          const subjectType =
-            GoogleCloudTTIProvider.SUBJECT_TYPE_MAP[ref.subjectType ?? 'default'] ??
-            'SUBJECT_TYPE_DEFAULT';
-
-          const subjectImageConfig: Record<string, unknown> = { subjectType };
-          if (ref.subjectDescription) {
-            subjectImageConfig.subjectDescription = ref.subjectDescription;
-          }
-
-          referenceImages.push({
-            referenceType: 'REFERENCE_TYPE_SUBJECT',
-            referenceId: refId,
-            referenceImage: {
-              bytesBase64Encoded: ref.base64,
-            },
-            subjectImageConfig,
-          });
-
-          // Track which subjects are not referenced in the prompt
-          if (!effectivePrompt.includes(`[${refId}]`)) {
-            missingPromptRefs.push(refId);
-          }
-        }
-
-        // Auto-inject missing [N] references so the model actually uses the subjects.
-        // Log a warning so callers know to include them explicitly for best results.
-        if (missingPromptRefs.length > 0) {
-          const refs = missingPromptRefs.map((r) => `[${r}]`).join(' ');
-          this.log(
-            'warn',
-            `Prompt does not reference subject(s) ${refs}. Auto-appending to prompt. ` +
-              `For best results, include [N] explicitly where the subject should appear.`
-          );
-          effectivePrompt = `${effectivePrompt} ${refs}`;
-        }
-      }
-
       const instanceValue = {
-        prompt: effectivePrompt,
+        prompt: request.prompt,
         referenceImages,
       };
 

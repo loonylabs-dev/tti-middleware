@@ -11,7 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as zlib from 'zlib';
-import { TTIRequest, TTIProvider, RetryOptions, TTIMaskReferenceImage } from '../../../src/middleware/types';
+import { TTIRequest, TTIProvider, RetryOptions } from '../../../src/middleware/types';
 
 // ============================================================
 // ENVIRONMENT CONFIGURATION
@@ -300,8 +300,6 @@ export interface InpaintingTestOptions extends LiveTestRequestOptions {
   maskMimeType?: string;
   editMode?: 'inpainting-insert' | 'inpainting-remove' | 'background-swap' | 'outpainting';
   maskDilation?: number;
-  /** Subject reference images. Use the full TTIMaskReferenceImage type so subjectDescription is available. */
-  maskReferenceImages?: TTIMaskReferenceImage[];
 }
 
 /**
@@ -323,7 +321,6 @@ export function buildInpaintingRequest(options: InpaintingTestOptions): TTIReque
     },
     editMode: options.editMode ?? 'inpainting-insert',
     maskDilation: options.maskDilation ?? 0.02,
-    ...(options.maskReferenceImages ? { maskReferenceImages: options.maskReferenceImages } : {}),
     ...(options.providerOptions ? { providerOptions: options.providerOptions } : {}),
   };
 }
