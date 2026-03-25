@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.12.0] - 2026-03-25
 
+### References
+
+- [Vertex AI — Insert objects into an image using inpaint](https://cloud.google.com/vertex-ai/generative-ai/docs/image/edit-insert-objects)
+- [Vertex AI — Imagen API edit reference](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/imagen-api-edit)
+- [Vertex AI — Subject customization](https://cloud.google.com/vertex-ai/generative-ai/docs/image/subject-customization)
+
 ### Fixed
 
 #### Guided inpainting: correct Vertex AI API usage for `maskReferenceImages`

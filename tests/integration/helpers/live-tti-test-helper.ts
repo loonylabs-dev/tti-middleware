@@ -90,6 +90,7 @@ export interface LiveTestRequestOptions {
   aspectRatio?: string;
   n?: number;
   retry?: boolean | RetryOptions;
+  providerOptions?: Record<string, unknown>;
 }
 
 /**
@@ -323,6 +324,7 @@ export function buildInpaintingRequest(options: InpaintingTestOptions): TTIReque
     editMode: options.editMode ?? 'inpainting-insert',
     maskDilation: options.maskDilation ?? 0.02,
     ...(options.maskReferenceImages ? { maskReferenceImages: options.maskReferenceImages } : {}),
+    ...(options.providerOptions ? { providerOptions: options.providerOptions } : {}),
   };
 }
 
