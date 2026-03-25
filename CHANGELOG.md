@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.12.0] - 2026-03-25
+
+### Fixed
+
+#### Guided inpainting: correct Vertex AI API usage for `maskReferenceImages`
+
+Four bugs in `editWithImagen` that caused the subject reference image to be ignored:
+
+**Bug 1 — Wrong `referenceId` assignments (CRITICAL)**
+Vertex AI requires `REFERENCE_TYPE_RAW` and `REFERENCE_TYPE_MASK` to share the same
+`referenceId` so the model knows the mask belongs to that base image. `REFERENCE_TYPE_SUBJECT`
+then gets a unique ID starting at 1 (referenced in the prompt as `[1]`).
+
+Previous (wrong) layout:
+```
+RAW    referenceId: 1   MASK   referenceId: 2   SUBJECT referenceId: 3
+```
+Corrected layout:
+```
+RAW    referenceId: 0   MASK   referenceId: 0   SUBJECT referenceId: 1
+```
+
+**Bug 2 — Missing `subjectDescription` in `subjectImageConfig`**
+Google confirmed `subjectDescription` is more important than the image pixels — without it
+the model barely uses the reference. Added `subjectDescription?: string` to `TTIMaskReferenceImage`
+and now passes it into `subjectImageConfig` when present.
+
+**Bug 3 — Prompt `[N]` reference not enforced**
+The model silently ignores any `REFERENCE_TYPE_SUBJECT` not cited as `[N]` in the prompt.
+The middleware now auto-appends missing `[N]` tokens and logs a warning so callers know to
+include them explicitly for best results.
+
+**Bug 4 — Wrong Vertex AI constant for `animal` subject type**
+`SUBJECT_TYPE_ANIMAL` → corrected to `SUBJECT_TYPE_ANIMAL_COMPANION` (official API value).
+
+### Added
+
+- `TTIMaskReferenceImage.subjectDescription?: string` — visual description of the subject
+  (e.g. `"a woman with curly red hair, wearing a blue jacket"`). Strongly recommended when
+  using `maskReferenceImages` for guided inpainting.
+- Integration test `'should insert character reference image next to dog at door (real assets)'`
+  that uses real image files from `output/mask-inpainting/` and saves the result for visual inspection.
+- `createRegionMaskPNG()` helper in `live-tti-test-helper` — creates a mask for an arbitrary
+  rectangular region (not just the center) by specifying x/y boundary ratios.
+- `loadImageAsBase64()` / `saveOutputImage()` helpers for real-image integration tests.
+
+---
+
 ## [1.11.0] - 2026-03-25
 
 ### Added

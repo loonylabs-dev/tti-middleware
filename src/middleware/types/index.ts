@@ -176,6 +176,13 @@ export interface TTIMaskReferenceImage {
    * Defaults to 'default' if omitted.
    */
   subjectType?: TTISubjectType;
+  /**
+   * Text description of the subject shown in the reference image.
+   * Google confirmed this is MORE important than the image pixels — without it
+   * the model barely uses the reference. Describe visual appearance, not name.
+   * Example: "a woman with curly red hair, wearing a blue jacket"
+   */
+  subjectDescription?: string;
 }
 
 /**

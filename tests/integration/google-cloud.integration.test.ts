@@ -18,6 +18,7 @@
 import { TTIService } from '../../src/middleware/services/tti/tti.service';
 import { GoogleCloudTTIProvider } from '../../src/middleware/services/tti/providers/google-cloud-provider';
 import { TTIProvider } from '../../src/middleware/types';
+import * as path from 'path';
 import {
   describeLive,
   itLive,
@@ -27,6 +28,9 @@ import {
   buildInpaintingRequest,
   createSolidColorPNG,
   createCenterMaskPNG,
+  createRegionMaskPNG,
+  loadImageAsBase64,
+  saveOutputImage,
   logLiveTestStart,
   logLiveTestResult,
   validateImageResponse,
@@ -34,6 +38,9 @@ import {
   TTI_TIMEOUT,
   TTI_EXTENDED_TIMEOUT,
 } from './helpers/live-tti-test-helper';
+
+// Path to real test images for guided inpainting tests
+const MASK_INPAINTING_ASSETS = path.resolve(__dirname, '../../output/mask-inpainting');
 
 // ============================================================
 // TEST SETUP
@@ -606,6 +613,117 @@ describeLive('Imagen Capability (Mask Reference Images)', () => {
         duration: response.metadata.duration,
         imagesGenerated: response.usage.imagesGenerated,
       });
+    },
+    TTI_EXTENDED_TIMEOUT
+  );
+
+  // ────────────────────────────────────────────────────────────
+  // REAL-IMAGE TEST: insert character next to dog at door
+  //
+  // Uses actual assets from output/mask-inpainting/:
+  //   base-image.png     — 1376×768 scene with a dog at a door
+  //   character-image.png — 1024×1024 character portrait
+  //
+  // Mask: left ~40 % of the base image (white = inpaint, black = keep).
+  // The character [1] is inserted into that region via REFERENCE_TYPE_SUBJECT.
+  //
+  // How to verify results:
+  //   Open output/mask-inpainting/result-guided-inpainting-*.png
+  //   The character should appear on the left side next to the dog.
+  // ────────────────────────────────────────────────────────────
+  itLive(
+    'should insert character reference image next to dog at door (real assets)',
+    async () => {
+      logLiveTestStart(
+        'Imagen Capability - Guided Inpainting with real character reference (left-side mask)'
+      );
+
+      // Load real assets from disk
+      const baseImageBase64 = loadImageAsBase64(
+        path.join(MASK_INPAINTING_ASSETS, 'base-image.png')
+      );
+      const characterImageBase64 = loadImageAsBase64(
+        path.join(MASK_INPAINTING_ASSETS, 'character-image.png')
+      );
+
+      console.log(
+        `[LIVE TEST]   base-image.png loaded (${Math.round(baseImageBase64.length / 1024)} KB base64)`
+      );
+      console.log(
+        `[LIVE TEST]   character-image.png loaded (${Math.round(characterImageBase64.length / 1024)} KB base64)`
+      );
+
+      // Mask: white on the LEFT 40 % of the 1376×768 base image.
+      // This is the area where the character should be inserted (to the left of the dog).
+      // Black on the right 60 % preserves the original dog-at-door content.
+      const maskBase64 = createRegionMaskPNG(
+        1376, // base image width
+        768,  // base image height
+        0,    // x0 = left edge
+        0.40  // x1 = 40 % from left
+      );
+
+      // The prompt MUST reference [1] for the model to use the subject image.
+      // Vertex AI docs confirm: without [N] in the prompt, the REFERENCE_TYPE_SUBJECT
+      // reference is silently ignored regardless of how well the image is provided.
+      const prompt =
+        'Insert the character [1] standing naturally to the left of the dog near the door, ' +
+        'matching the scene lighting and art style, photorealistic';
+
+      const request = buildInpaintingRequest({
+        prompt,
+        baseImageBase64,
+        maskBase64,
+        editMode: 'inpainting-insert',
+        maskDilation: 0.02,
+        maskReferenceImages: [
+          {
+            base64: characterImageBase64,
+            mimeType: 'image/png',
+            subjectType: 'person',
+            // subjectDescription: Google confirmed this is MORE important than pixels.
+            // Set this to a visual description of the character in character-image.png.
+            // Example: 'a young woman with brown hair, illustrated in children book style'
+            subjectDescription: 'a person, children book illustration character, full body pose',
+          },
+        ],
+        providerOptions: {
+          // Use higher step count for better quality on guided inpainting
+          baseSteps: 50,
+        },
+      });
+
+      const response = await service.generate(request);
+
+      // — Structural assertions —
+      expect(response).toBeDefined();
+      expect(response.images).toBeDefined();
+      expect(response.images.length).toBeGreaterThan(0);
+      expect(response.metadata.provider).toBe(TTIProvider.GOOGLE_CLOUD);
+      expect(response.metadata.model).toBe('imagen-capability');
+      expect(validateImageResponse(response)).toBe(true);
+
+      const image = response.images[0];
+      expect(image.base64).toBeDefined();
+      expect(isValidBase64Image(image.base64!)).toBe(true);
+
+      // — Save output for visual inspection —
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const outputPath = path.join(
+        MASK_INPAINTING_ASSETS,
+        `result-guided-inpainting-${timestamp}.png`
+      );
+      saveOutputImage(image.base64!, outputPath);
+
+      logLiveTestResult({
+        model: response.metadata.model,
+        region: response.metadata.region,
+        duration: response.metadata.duration,
+        imagesGenerated: response.usage.imagesGenerated,
+      });
+
+      console.log('[LIVE TEST] ✓ Guided inpainting with real character reference completed.');
+      console.log('[LIVE TEST] ⚡ Open the output PNG to verify the character appears on the left.');
     },
     TTI_EXTENDED_TIMEOUT
   );

@@ -8,8 +8,10 @@
  *   TTI_INTEGRATION_TESTS=true npm run test:integration
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import * as zlib from 'zlib';
-import { TTIRequest, TTIProvider, RetryOptions } from '../../../src/middleware/types';
+import { TTIRequest, TTIProvider, RetryOptions, TTIMaskReferenceImage } from '../../../src/middleware/types';
 
 // ============================================================
 // ENVIRONMENT CONFIGURATION
@@ -297,7 +299,8 @@ export interface InpaintingTestOptions extends LiveTestRequestOptions {
   maskMimeType?: string;
   editMode?: 'inpainting-insert' | 'inpainting-remove' | 'background-swap' | 'outpainting';
   maskDilation?: number;
-  maskReferenceImages?: Array<{ base64: string; mimeType?: string; subjectType?: import('../../../src/middleware/types').TTISubjectType }>;
+  /** Subject reference images. Use the full TTIMaskReferenceImage type so subjectDescription is available. */
+  maskReferenceImages?: TTIMaskReferenceImage[];
 }
 
 /**
@@ -337,4 +340,59 @@ export function isValidBase64Image(base64: string): boolean {
   const isJPEG = base64.startsWith('/9j/');
 
   return isPNG || isJPEG || base64.length > 1000; // Fallback: at least 1KB of data
+}
+
+// ============================================================
+// FILE I/O UTILITIES (for real-image integration tests)
+// ============================================================
+
+/**
+ * Load an image from disk and return its base64-encoded content.
+ * @param imagePath Absolute path to the image file
+ */
+export function loadImageAsBase64(imagePath: string): string {
+  const buffer = fs.readFileSync(imagePath);
+  return buffer.toString('base64');
+}
+
+/**
+ * Save a base64-encoded image to disk.
+ * Creates parent directories as needed.
+ * @param base64    Base64-encoded image data (no data-URI prefix)
+ * @param outputPath Absolute path where the file will be written
+ */
+export function saveOutputImage(base64: string, outputPath: string): void {
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, Buffer.from(base64, 'base64'));
+  console.log(`[LIVE TEST]   Output saved → ${outputPath}`);
+}
+
+/**
+ * Create a mask PNG where a rectangular region is white (area to inpaint)
+ * and everything outside is black (area to preserve).
+ *
+ * @param width         Image width in pixels
+ * @param height        Image height in pixels
+ * @param x0Ratio       Left boundary of mask as fraction of width  (0.0–1.0)
+ * @param x1Ratio       Right boundary of mask as fraction of width (0.0–1.0)
+ * @param y0Ratio       Top boundary of mask as fraction of height  (0.0–1.0, default 0)
+ * @param y1Ratio       Bottom boundary of mask as fraction of height (0.0–1.0, default 1)
+ */
+export function createRegionMaskPNG(
+  width: number,
+  height: number,
+  x0Ratio: number,
+  x1Ratio: number,
+  y0Ratio = 0,
+  y1Ratio = 1
+): string {
+  const x0 = Math.floor(width * x0Ratio);
+  const x1 = Math.floor(width * x1Ratio);
+  const y0 = Math.floor(height * y0Ratio);
+  const y1 = Math.floor(height * y1Ratio);
+
+  return generatePNG(width, height, (x, y) => {
+    const inMask = x >= x0 && x < x1 && y >= y0 && y < y1;
+    return inMask ? [255, 255, 255] : [0, 0, 0];
+  }).toString('base64');
 }

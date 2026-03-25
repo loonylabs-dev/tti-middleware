@@ -730,7 +730,8 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
 
   private static readonly SUBJECT_TYPE_MAP: Record<string, string> = {
     person: 'SUBJECT_TYPE_PERSON',
-    animal: 'SUBJECT_TYPE_ANIMAL',
+    // Vertex AI API uses ANIMAL_COMPANION, not ANIMAL
+    animal: 'SUBJECT_TYPE_ANIMAL_COMPANION',
     product: 'SUBJECT_TYPE_PRODUCT',
     default: 'SUBJECT_TYPE_DEFAULT',
   };
@@ -749,18 +750,30 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
 
       const endpoint = `projects/${this.config.projectId}/locations/${region}/publishers/google/models/${internalModelId}`;
 
-      // Build referenceImages array: [RAW base image, MASK image]
+      // Build referenceImages array.
+      //
+      // Vertex AI requires RAW and MASK to share the same referenceId so the
+      // model knows the mask belongs to that base image. SUBJECT references then
+      // get incrementing IDs starting at 1 and MUST be cited in the prompt as [N].
+      //
+      // Correct layout (confirmed by Vertex AI docs):
+      //   REFERENCE_TYPE_RAW    referenceId: 0
+      //   REFERENCE_TYPE_MASK   referenceId: 0  ← same as RAW
+      //   REFERENCE_TYPE_SUBJECT referenceId: 1  ← referenced in prompt as [1]
+      const RAW_MASK_REFERENCE_ID = 0;
+      const SUBJECT_REFERENCE_ID_START = 1;
+
       const referenceImages: unknown[] = [
         {
           referenceType: 'REFERENCE_TYPE_RAW',
-          referenceId: 1,
+          referenceId: RAW_MASK_REFERENCE_ID,
           referenceImage: {
             bytesBase64Encoded: request.baseImage!.base64,
           },
         },
         {
           referenceType: 'REFERENCE_TYPE_MASK',
-          referenceId: 2,
+          referenceId: RAW_MASK_REFERENCE_ID,
           referenceImage: {
             bytesBase64Encoded: request.maskImage!.base64,
           },
@@ -771,27 +784,54 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
         },
       ];
 
-      // Append optional subject reference images for guided inpainting
+      // Append optional subject reference images for guided inpainting.
+      // Each subject gets a unique referenceId starting at SUBJECT_REFERENCE_ID_START.
+      // The model ONLY uses a subject reference if [referenceId] appears in the prompt.
+      let effectivePrompt = request.prompt;
       if (request.maskReferenceImages && request.maskReferenceImages.length > 0) {
+        const missingPromptRefs: number[] = [];
+
         for (const [i, ref] of request.maskReferenceImages.entries()) {
+          const refId = SUBJECT_REFERENCE_ID_START + i;
           const subjectType =
             GoogleCloudTTIProvider.SUBJECT_TYPE_MAP[ref.subjectType ?? 'default'] ??
             'SUBJECT_TYPE_DEFAULT';
+
+          const subjectImageConfig: Record<string, unknown> = { subjectType };
+          if (ref.subjectDescription) {
+            subjectImageConfig.subjectDescription = ref.subjectDescription;
+          }
+
           referenceImages.push({
             referenceType: 'REFERENCE_TYPE_SUBJECT',
-            referenceId: 3 + i,
+            referenceId: refId,
             referenceImage: {
               bytesBase64Encoded: ref.base64,
             },
-            subjectImageConfig: {
-              subjectType,
-            },
+            subjectImageConfig,
           });
+
+          // Track which subjects are not referenced in the prompt
+          if (!effectivePrompt.includes(`[${refId}]`)) {
+            missingPromptRefs.push(refId);
+          }
+        }
+
+        // Auto-inject missing [N] references so the model actually uses the subjects.
+        // Log a warning so callers know to include them explicitly for best results.
+        if (missingPromptRefs.length > 0) {
+          const refs = missingPromptRefs.map((r) => `[${r}]`).join(' ');
+          this.log(
+            'warn',
+            `Prompt does not reference subject(s) ${refs}. Auto-appending to prompt. ` +
+              `For best results, include [N] explicitly where the subject should appear.`
+          );
+          effectivePrompt = `${effectivePrompt} ${refs}`;
         }
       }
 
       const instanceValue = {
-        prompt: request.prompt,
+        prompt: effectivePrompt,
         referenceImages,
       };
 
