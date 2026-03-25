@@ -663,11 +663,12 @@ describeLive('Imagen Capability (Mask Reference Images)', () => {
         0.40  // x1 = 40 % from left
       );
 
-      // The prompt MUST reference [1] for the model to use the subject image.
-      // Vertex AI docs confirm: without [N] in the prompt, the REFERENCE_TYPE_SUBJECT
-      // reference is silently ignored regardless of how well the image is provided.
+      // The prompt MUST reference [3] for the model to use the subject image.
+      // Vertex AI assigns referenceIds sequentially: RAW=1, MASK=2, SUBJECT=3.
+      // Without [3] in the prompt, the REFERENCE_TYPE_SUBJECT reference is silently
+      // ignored regardless of how well the image is provided.
       const prompt =
-        'Insert the character [1] standing naturally to the left of the dog near the door, ' +
+        'Insert the character [3] standing naturally to the left of the dog near the door, ' +
         'matching the scene lighting and art style, photorealistic';
 
       const request = buildInpaintingRequest({

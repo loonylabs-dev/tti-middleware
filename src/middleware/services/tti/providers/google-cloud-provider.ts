@@ -752,28 +752,31 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
 
       // Build referenceImages array.
       //
-      // Vertex AI requires RAW and MASK to share the same referenceId so the
-      // model knows the mask belongs to that base image. SUBJECT references then
-      // get incrementing IDs starting at 1 and MUST be cited in the prompt as [N].
+      // Vertex AI uses sequential, distinct referenceId values for each entry.
+      // RAW and MASK have separate IDs — the API pairs them by type/order, not by shared ID.
+      // SUBJECT gets the next ID after MASK and MUST be cited in the prompt as [N].
       //
-      // Correct layout (confirmed by Vertex AI docs):
-      //   REFERENCE_TYPE_RAW    referenceId: 0
-      //   REFERENCE_TYPE_MASK   referenceId: 0  ← same as RAW
-      //   REFERENCE_TYPE_SUBJECT referenceId: 1  ← referenced in prompt as [1]
-      const RAW_MASK_REFERENCE_ID = 0;
-      const SUBJECT_REFERENCE_ID_START = 1;
+      // Correct layout (confirmed by official Vertex AI docs):
+      //   REFERENCE_TYPE_RAW    referenceId: 1
+      //   REFERENCE_TYPE_MASK   referenceId: 2
+      //   REFERENCE_TYPE_SUBJECT referenceId: 3  ← referenced in prompt as [3]
+      //
+      // See: https://cloud.google.com/vertex-ai/generative-ai/docs/image/edit-insert-objects
+      const RAW_REFERENCE_ID = 1;
+      const MASK_REFERENCE_ID = 2;
+      const SUBJECT_REFERENCE_ID_START = 3;
 
       const referenceImages: unknown[] = [
         {
           referenceType: 'REFERENCE_TYPE_RAW',
-          referenceId: RAW_MASK_REFERENCE_ID,
+          referenceId: RAW_REFERENCE_ID,
           referenceImage: {
             bytesBase64Encoded: request.baseImage!.base64,
           },
         },
         {
           referenceType: 'REFERENCE_TYPE_MASK',
-          referenceId: RAW_MASK_REFERENCE_ID,
+          referenceId: MASK_REFERENCE_ID,
           referenceImage: {
             bytesBase64Encoded: request.maskImage!.base64,
           },

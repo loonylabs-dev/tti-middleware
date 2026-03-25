@@ -15,18 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Four bugs in `editWithImagen` that caused the subject reference image to be ignored:
 
-**Bug 1 — Wrong `referenceId` assignments (CRITICAL)**
-Vertex AI requires `REFERENCE_TYPE_RAW` and `REFERENCE_TYPE_MASK` to share the same
-`referenceId` so the model knows the mask belongs to that base image. `REFERENCE_TYPE_SUBJECT`
-then gets a unique ID starting at 1 (referenced in the prompt as `[1]`).
+**Bug 1 — SUBJECT `referenceId` started at 3 but prompt never referenced `[3]`**
+The `referenceId` layout is correct per Vertex AI docs (RAW=1, MASK=2, SUBJECT=3 — each
+distinct). However, the prompt never included `[3]`, so the model silently ignored the
+SUBJECT reference entirely. Combined with Bug 3 (auto-inject), this is now resolved.
 
-Previous (wrong) layout:
+Confirmed layout (matches official Vertex AI docs):
 ```
-RAW    referenceId: 1   MASK   referenceId: 2   SUBJECT referenceId: 3
-```
-Corrected layout:
-```
-RAW    referenceId: 0   MASK   referenceId: 0   SUBJECT referenceId: 1
+RAW    referenceId: 1   MASK   referenceId: 2   SUBJECT referenceId: 3 → prompt: [3]
 ```
 
 **Bug 2 — Missing `subjectDescription` in `subjectImageConfig`**
