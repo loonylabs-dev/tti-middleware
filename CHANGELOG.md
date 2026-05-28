@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.13.0] - 2026-05-28
+
+### Changed
+- **Gemini 3 Image models GA**: Switched from preview to GA endpoints.
+  - `gemini-pro-image` → `gemini-3-pro-image` (was `gemini-3-pro-image-preview`)
+  - `gemini-flash-image-2` → `gemini-3.1-flash-image` (was `gemini-3.1-flash-image-preview`)
+  - Preview endpoints (`-preview` suffix) will be shut down by Google on 2026-06-25.
+- **Docs**: Updated header JSDoc and inline comments to reflect GA status.
+  Both Gemini 3 models still require the `global` endpoint — EU regional
+  endpoints are not yet announced.
+
+---
+
 ## [1.12.0] - 2026-03-25
 
 ### Removed

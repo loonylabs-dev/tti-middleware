@@ -7,8 +7,8 @@
  * - Imagen 4 Fast (imagen-4.0-fast-generate-001) - Faster inference variant
  * - Imagen 4 Ultra (imagen-4.0-ultra-generate-001) - Highest quality variant
  * - Gemini 2.5 Flash Image - Text-to-image with character consistency
- * - Gemini 3 Pro Image (gemini-3-pro-image-preview) - 4K, text rendering
- * - Gemini 3.1 Flash Image (gemini-3.1-flash-image-preview) - 4K, improved text rendering (global endpoint)
+ * - Gemini 3 Pro Image (gemini-3-pro-image, GA) - 4K, text rendering (global endpoint)
+ * - Gemini 3.1 Flash Image (gemini-3.1-flash-image, GA) - 4K, improved text rendering (global endpoint)
  *
  * All requests go through Google Cloud (Vertex AI) with proper DPA.
  * EU-compliant when using EU regions.
@@ -204,8 +204,8 @@ const GOOGLE_CLOUD_MODELS: ModelInfo[] = [
       imageEditing: false,
       maxImagesPerRequest: 1,
     },
-    // Preview model — requires global endpoint (same as gemini-pro-image).
-    // Will likely get regional endpoints once GA.
+    // GA model (released 2026-05) — global endpoint only.
+    // EU regional endpoints not yet available; see Vertex AI release notes.
     availableRegions: ['global'],
     pricingUrl: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
   },
@@ -219,8 +219,8 @@ const MODEL_ID_MAP: Record<string, string> = {
   'imagen-4-ultra': 'imagen-4.0-ultra-generate-001',
   'imagen-capability': 'imagen-3.0-capability-001',
   'gemini-flash-image': 'gemini-2.5-flash-image',
-  'gemini-pro-image': 'gemini-3-pro-image-preview',
-  'gemini-flash-image-2': 'gemini-3.1-flash-image-preview',
+  'gemini-pro-image': 'gemini-3-pro-image',
+  'gemini-flash-image-2': 'gemini-3.1-flash-image',
 };
 
 // Models that use the Gemini generateContent API (vs Imagen predict API)
