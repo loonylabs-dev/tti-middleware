@@ -49,6 +49,11 @@ export class TTIService {
       eden_ai: TTIProvider.EDENAI,
       // IONOS
       ionos: TTIProvider.IONOS,
+      // Black Forest Labs (FLUX)
+      bfl: TTIProvider.BFL,
+      blackforestlabs: TTIProvider.BFL,
+      black_forest_labs: TTIProvider.BFL,
+      flux: TTIProvider.BFL,
     };
     return providerMap[normalized] || null;
   }

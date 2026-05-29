@@ -24,11 +24,12 @@ describe('TTIProvider enum', () => {
     expect(TTIProvider.GOOGLE_CLOUD).toBe('google-cloud');
     expect(TTIProvider.EDENAI).toBe('edenai');
     expect(TTIProvider.IONOS).toBe('ionos');
+    expect(TTIProvider.BFL).toBe('bfl');
   });
 
-  it('should have exactly 3 providers', () => {
+  it('should have exactly 4 providers', () => {
     const providers = Object.values(TTIProvider);
-    expect(providers).toHaveLength(3);
+    expect(providers).toHaveLength(4);
   });
 });
 

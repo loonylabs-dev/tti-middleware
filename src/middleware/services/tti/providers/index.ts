@@ -5,3 +5,4 @@ export * from './base-tti-provider';
 export * from './google-cloud-provider';
 export * from './edenai-provider';
 export * from './ionos-provider';
+export * from './bfl-provider';

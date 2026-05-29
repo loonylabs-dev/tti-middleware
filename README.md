@@ -2,7 +2,7 @@
 
 # TTI Middleware
 
-*Provider-agnostic Text-to-Image middleware with **GDPR compliance** and **character consistency** support. Currently supports Google Cloud (Imagen 3, Imagen 4, Gemini Flash Image, Gemini 3 Pro Image), Eden AI, and IONOS. Features EU data residency via Vertex AI, automatic region fallback, retry logic, and comprehensive error handling.*
+*Provider-agnostic Text-to-Image middleware with **GDPR compliance** and **character consistency** support. Currently supports Google Cloud (Imagen 3, Imagen 4, Gemini Flash Image, Gemini 3 Pro Image), Black Forest Labs (FLUX), Eden AI, and IONOS. Features EU data residency (Vertex AI + the BFL EU endpoint), automatic region fallback, retry logic, and comprehensive error handling.*
 
 <!-- Horizontal Badge Navigation Bar -->
 [![npm version](https://img.shields.io/npm/v/@loonylabs/tti-middleware.svg?style=for-the-badge&logo=npm&logoColor=white)](https://www.npmjs.com/package/@loonylabs/tti-middleware)
@@ -42,6 +42,7 @@
 
 - **Multi-Provider Architecture**: Unified API for all TTI providers
   - **Google Cloud** (Recommended): Imagen 3, Imagen 4, Gemini Flash Image & Gemini 3 Pro Image with EU data residency
+  - **Black Forest Labs (FLUX)**: FLUX1.1 pro, FLUX.1 Kontext pro, FLUX.2 pro via the EU endpoint (GDPR / EU data residency)
   - **Eden AI**: Aggregator with access to OpenAI, Stability AI, Replicate (experimental)
   - **IONOS**: German cloud provider with OpenAI-compatible API (experimental)
 - **Character Consistency**: Generate consistent characters across multiple images (perfect for children's book illustrations)
@@ -150,6 +151,12 @@ const edenResult = await service.generate({
   model: 'openai', // Uses DALL-E via Eden AI
 }, TTIProvider.EDENAI);
 
+// Use Black Forest Labs / FLUX (EU endpoint, GDPR)
+const fluxResult = await service.generate({
+  prompt: 'A mountain landscape',
+  model: 'flux-1.1-pro',
+}, TTIProvider.BFL);
+
 // Use IONOS (experimental)
 const ionosResult = await service.generate({
   prompt: 'A mountain landscape',
@@ -193,6 +200,10 @@ GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_APPLICATION_CREDENTIALS=./service-account.json
 GOOGLE_CLOUD_REGION=europe-west4  # Recommended for Gemini
 
+# Black Forest Labs / FLUX (EU endpoint, GDPR)
+BFL_API_KEY=your-api-key
+BFL_API_URL=https://api.eu.bfl.ai  # Default; do not change if EU residency is required
+
 # Eden AI (experimental)
 EDENAI_API_KEY=your-api-key
 
@@ -219,6 +230,37 @@ IONOS_API_URL=https://api.ionos.cloud/ai/v1
 **Important:**
 - `gemini-flash-image` is **NOT available** in `europe-west3` (Frankfurt) - auto-fallback to EU alternative
 - `gemini-pro-image` requires the **`global` Vertex AI endpoint** - the middleware handles this automatically
+
+### Black Forest Labs (FLUX)
+
+FLUX models via the **EU endpoint** (`api.eu.bfl.ai`) for GDPR / EU data residency. BFL is a German company (Freiburg) holding SOC 2 Type II and ISO 27001.
+
+| Model | ID | Character Consistency / Editing | Reference Images | Max Images |
+|-------|-----|--------------------------------|------------------|------------|
+| **FLUX1.1 [pro]** | `flux-1.1-pro` (default) | No | – | 4* |
+| **FLUX.1 Kontext [pro]** | `flux-kontext-pro` | **Yes** (prompt-based, via reference) | 1 | 1 |
+| **FLUX.2 [pro]** | `flux-2-pro` | **Yes** (multi-reference) | up to 8 | 1 |
+
+*BFL returns one image per request; `n > 1` fans out into `n` parallel requests.
+
+**Important:**
+- The provider is **asynchronous** under the hood (submit → poll → download) but exposed through the normal `generate()` flow.
+- Delivery URLs **expire after 10 minutes** — the provider downloads and returns base64 by default. Set `providerOptions.returnUrls = true` to keep the raw URL.
+- FLUX does **not** support mask-based inpainting; editing is prompt-based via `referenceImages`.
+- Why direct (not Azure/Bedrock): FLUX over Azure is Global Standard only (no EU data zone), and Bedrock FLUX is primarily US-region — only the BFL EU endpoint guarantees EU data residency.
+
+```typescript
+service.registerProvider(new BflProvider()); // reads BFL_API_KEY
+
+// Edit / character consistency with FLUX.1 Kontext
+const edited = await service.generate({
+  model: 'flux-kontext-pro',
+  prompt: 'Change the background to a sunny park, keep the character identical',
+  referenceImages: [{ base64: characterBase64 }],
+  aspectRatio: '1:1',
+  providerOptions: { outputFormat: 'png' },
+}, TTIProvider.BFL);
+```
 
 ### Eden AI (Experimental)
 
@@ -347,10 +389,13 @@ const result = await service.generate({
 | Provider | DPA | GDPR | EU Data Residency | Document |
 |----------|-----|------|-------------------|----------|
 | **Google Cloud** | Yes | Yes | Yes | [CDPA](https://cloud.google.com/terms/data-processing-addendum) |
+| **Black Forest Labs (FLUX)** | Yes | Yes | Yes (EU endpoint) | [BFL Legal](https://bfl.ai/legal/terms-of-service) |
 | **Eden AI** | Yes | Depends* | Depends* | [Privacy Policy](https://www.edenai.co/privacy-policy) |
 | **IONOS** | Yes | Yes | Yes | [AGB](https://cloud.ionos.de/agb) |
 
 *Eden AI is an aggregator - compliance depends on the underlying provider.
+
+**Black Forest Labs:** EU data residency requires the EU endpoint (`api.eu.bfl.ai`, the provider default). Holds SOC 2 Type II and ISO 27001. Note that FLUX accessed via Azure AI Foundry (Global Standard only) or AWS Bedrock (primarily US-region) does **not** guarantee EU data residency.
 
 ### Google Cloud Data Usage
 
@@ -394,7 +439,7 @@ class TTIService {
 ```typescript
 interface TTIRequest {
   prompt: string;
-  model?: string;           // 'imagen-3', 'imagen-4', 'gemini-flash-image', 'gemini-pro-image', etc.
+  model?: string;           // 'imagen-3', 'imagen-4', 'gemini-flash-image', 'flux-1.1-pro', 'flux-kontext-pro', etc.
   n?: number;               // Number of images (default: 1)
   aspectRatio?: string;     // '1:1', '16:9', '4:3', etc.
 
@@ -604,7 +649,7 @@ try {
 # Run all tests
 npm test
 
-# Unit tests only (123 tests, >95% coverage)
+# Unit tests only (222 tests, >95% coverage)
 npm run test:unit
 
 # Unit tests with watch mode
@@ -621,6 +666,10 @@ npm run test:ci
 
 # Manual test scripts
 npm run test:manual:google-cloud
+
+# BFL / FLUX live test (real API, spends credits) — run selected steps
+npx ts-node tests/manual/bfl-live-test.ts t2i-flux11      # single step
+npx ts-node tests/manual/bfl-live-test.ts all             # full coverage
 ```
 
 ### Integration Tests
