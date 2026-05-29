@@ -96,7 +96,8 @@ console.log(provider.getRegion()); // 'europe-west4'
 Black Forest Labs (BFL) is the creator of the FLUX image models, headquartered in
 Freiburg im Breisgau, Germany. The middleware integrates BFL via its dedicated
 **EU endpoint** (`api.eu.bfl.ai`), which routes inference and serves generated
-images (`delivery-eu.bfl.ai`) within EU regions.
+images from EU delivery endpoints (`delivery.eu*.bfl.ai`, e.g.
+`delivery.eu2.bfl.ai`) within EU regions.
 
 ### Certifications
 

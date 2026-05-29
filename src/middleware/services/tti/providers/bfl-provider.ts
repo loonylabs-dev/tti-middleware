@@ -6,7 +6,8 @@
  *
  * BFL is a German company (Freiburg i. Br.). The EU endpoint keeps inference
  * routing within EU regions, and generated images are served from EU delivery
- * URLs (delivery-eu.bfl.ai). Holds SOC 2 Type II and ISO 27001.
+ * endpoints (delivery.eu*.bfl.ai, e.g. delivery.eu2.bfl.ai). Holds SOC 2
+ * Type II and ISO 27001.
  *
  * Architecture note — the BFL API is ASYNCHRONOUS:
  *   1. POST /v1/{model}        -> { id, polling_url }
