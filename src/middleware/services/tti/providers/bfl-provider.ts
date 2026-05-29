@@ -69,19 +69,20 @@ type BflStatus =
 // ============================================================
 
 /**
- * Maps the middleware model id to the BFL endpoint path segment.
+ * Model definition including the BFL endpoint path segment.
  * The model id and endpoint path are intentionally NOT identical
- * (BFL uses e.g. `flux-pro-1.1`).
+ * (BFL uses e.g. `flux-pro-1.1`), so the path is carried alongside the
+ * public ModelInfo to keep a single source of truth.
  */
-const BFL_MODEL_PATHS: Record<string, string> = {
-  'flux-1.1-pro': 'flux-pro-1.1',
-  'flux-kontext-pro': 'flux-kontext-pro',
-  'flux-2-pro': 'flux-2-pro',
-};
+interface BflModelDef extends ModelInfo {
+  /** BFL endpoint path segment used in `POST /v1/{apiPath}`. */
+  apiPath: string;
+}
 
-const BFL_MODELS: ModelInfo[] = [
+const BFL_MODELS: BflModelDef[] = [
   {
     id: 'flux-1.1-pro',
+    apiPath: 'flux-pro-1.1',
     displayName: 'FLUX1.1 [pro]',
     capabilities: {
       textToImage: true,
@@ -95,6 +96,7 @@ const BFL_MODELS: ModelInfo[] = [
   },
   {
     id: 'flux-kontext-pro',
+    apiPath: 'flux-kontext-pro',
     displayName: 'FLUX.1 Kontext [pro]',
     capabilities: {
       textToImage: true,
@@ -107,6 +109,7 @@ const BFL_MODELS: ModelInfo[] = [
   },
   {
     id: 'flux-2-pro',
+    apiPath: 'flux-2-pro',
     displayName: 'FLUX.2 [pro]',
     capabilities: {
       textToImage: true,
@@ -180,30 +183,40 @@ export class BflProvider extends BaseTTIProvider {
 
   protected async doGenerate(request: TTIRequest): Promise<TTIResponse> {
     const modelId = request.model || this.getDefaultModel();
-    const modelPath = BFL_MODEL_PATHS[modelId];
+    const modelDef = BFL_MODELS.find((m) => m.id === modelId);
 
-    if (!modelPath) {
+    if (!modelDef) {
       throw new InvalidConfigError(
         this.providerName,
-        `Unknown BFL model '${modelId}'. Available: ${Object.keys(BFL_MODEL_PATHS).join(', ')}`
+        `Unknown BFL model '${modelId}'. Available: ${BFL_MODELS.map((m) => m.id).join(', ')}`
       );
     }
+    const modelPath = modelDef.apiPath;
 
     const startTime = Date.now();
     const n = request.n && request.n > 0 ? request.n : 1;
     const body = this.buildRequestBody(request, modelId);
 
+    // BFL bills one job per image. Each n fans out into a separate (billed)
+    // request, so warn when n exceeds the model's declared maximum rather than
+    // silently spending credits the caller may not expect.
+    if (n > modelDef.capabilities.maxImagesPerRequest) {
+      this.log(
+        'warn',
+        `Requested n=${n} exceeds ${modelId} maxImagesPerRequest=${modelDef.capabilities.maxImagesPerRequest}; ` +
+          `this will create ${n} separately-billed BFL jobs`,
+        { model: modelId, n, max: modelDef.capabilities.maxImagesPerRequest }
+      );
+    }
+
     this.log('info', 'Generating image(s) with BFL', { model: modelId, n });
 
     // BFL produces one image per request — fan out n parallel pipelines.
-    // Each pipeline (submit -> poll -> download) is retried independently for
-    // transient submit errors via executeWithRetry.
+    // Retry of the (fast) submit happens INSIDE generateSingleImage; the long
+    // poll is deliberately kept outside executeWithRetry so it cannot trip the
+    // per-attempt timeout and cause a costly re-submit.
     const tasks = Array.from({ length: n }, () =>
-      this.executeWithRetry(
-        request,
-        () => this.generateSingleImage(modelPath, body, request),
-        `BFL ${modelId} generation`
-      )
+      this.generateSingleImage(modelPath, body, request)
     );
 
     const images = await Promise.all(tasks);
@@ -233,48 +246,58 @@ export class BflProvider extends BaseTTIProvider {
    * Run a single image pipeline: submit the job, poll until ready, then
    * resolve the resulting image (downloaded to base64 by default).
    *
-   * Only the submit step is wrapped by executeWithRetry (transient 429/5xx).
-   * Polling has its own bounded loop so a slow generation (e.g. FLUX.2) does
-   * not trip the per-attempt retry timeout and trigger a costly re-submit.
+   * Only the (fast) submit is wrapped by executeWithRetry, so transient
+   * 429/5xx/network errors on submit are retried. The long poll runs OUTSIDE
+   * executeWithRetry with its own bounded loop, so a slow generation (e.g.
+   * FLUX.2) cannot trip the per-attempt timeout and trigger a costly re-submit
+   * (which would create a duplicate, separately-billed job).
    */
   private async generateSingleImage(
     modelPath: string,
     body: Record<string, unknown>,
     request: TTIRequest
   ): Promise<TTIImage> {
-    const submit = await this.submitRequest(modelPath, body);
+    let submit: BflSubmitResponse;
+    try {
+      submit = await this.executeWithRetry(
+        request,
+        () => this.submitRequest(modelPath, body),
+        `BFL submit (${modelPath})`
+      );
+    } catch (error) {
+      throw this.handleError(error as Error, 'during BFL submit');
+    }
     const sampleUrl = await this.pollForResult(submit.polling_url, request);
     return this.resolveImage(sampleUrl, request);
   }
 
-  /** POST the generation job; returns the polling handle. */
+  /**
+   * POST the generation job; returns the polling handle.
+   *
+   * Throws RAW errors (with the HTTP status in the message) so the base
+   * class's executeWithRetry/isRetryableError can correctly classify them
+   * (429/5xx → retryable, 402/400 → not). Conversion to a typed TTIError
+   * happens at the boundary in generateSingleImage.
+   */
   private async submitRequest(
     modelPath: string,
     body: Record<string, unknown>
   ): Promise<BflSubmitResponse> {
     const url = `${this.baseUrl}/v1/${modelPath}`;
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'x-key': this.config.apiKey,
-          'Content-Type': 'application/json',
-          accept: 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (error) {
-      throw this.handleError(error as Error, 'during BFL submit');
-    }
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'x-key': this.config.apiKey,
+        'Content-Type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw this.handleError(
-        new Error(`BFL submit error (${response.status}): ${errorText}`),
-        'during BFL submit'
-      );
+      throw new Error(`BFL submit error (${response.status}): ${errorText}`);
     }
 
     const data = (await response.json()) as BflSubmitResponse;
@@ -302,9 +325,13 @@ export class BflProvider extends BaseTTIProvider {
 
     const deadline = Date.now() + maxWaitMs;
     let transientPollFailures = 0;
+    // Sleep BETWEEN polls, not before the first one — so an already-ready or
+    // immediately-moderated job is detected without an artificial interval delay.
+    let waited = false;
 
     while (Date.now() < deadline) {
-      await this.sleep(intervalMs);
+      if (waited) await this.sleep(intervalMs);
+      waited = true;
 
       let data: BflPollResponse;
       try {

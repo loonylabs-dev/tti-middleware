@@ -185,6 +185,86 @@ describe('BflProvider', () => {
       expect(polls).toBeGreaterThanOrEqual(2);
     });
 
+    it('submits exactly once even across many poll iterations (no re-submit)', async () => {
+      // Regression: the poll must run OUTSIDE executeWithRetry so a long poll
+      // never triggers a per-attempt timeout that re-submits (double charge).
+      let posts = 0;
+      let polls = 0;
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          posts++;
+          return Promise.resolve(
+            jsonResponse({ id: 'job-1', polling_url: 'https://api.eu.bfl.ai/poll/job-1' })
+          );
+        }
+        if (url.includes('/poll/')) {
+          polls++;
+          if (polls < 5) return Promise.resolve(jsonResponse({ id: 'job-1', status: 'Pending' }));
+          return Promise.resolve(
+            jsonResponse({ id: 'job-1', status: 'Ready', result: { sample: 'https://delivery-eu.bfl.ai/s.jpg' } })
+          );
+        }
+        return Promise.resolve(imageResponse());
+      });
+      // retry ENABLED (default) — the dangerous path the bug lived on.
+      const provider = new BflProvider();
+      const res = await provider.generate({ prompt: 'a fox', providerOptions: { pollIntervalMs: 0 } });
+      expect(res.images).toHaveLength(1);
+      expect(posts).toBe(1); // exactly one billed job
+      expect(polls).toBeGreaterThanOrEqual(5);
+    });
+
+    it('retries a transient 5xx submit error', async () => {
+      // Regression: submitRequest throws a raw error with the status so the
+      // base class isRetryableError classifies 5xx as retryable.
+      let posts = 0;
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          posts++;
+          if (posts === 1) {
+            return Promise.resolve(jsonResponse({ detail: 'overloaded' }, false, 503));
+          }
+          return Promise.resolve(
+            jsonResponse({ id: 'job-1', polling_url: 'https://api.eu.bfl.ai/poll/job-1' })
+          );
+        }
+        if (url.includes('/poll/')) {
+          return Promise.resolve(
+            jsonResponse({ id: 'job-1', status: 'Ready', result: { sample: 'https://delivery-eu.bfl.ai/s.jpg' } })
+          );
+        }
+        return Promise.resolve(imageResponse());
+      });
+      const provider = new BflProvider();
+      const res = await provider.generate({
+        prompt: 'a fox',
+        // small/fast retry so the test is quick
+        retry: { maxRetries: 2, delayMs: 0, jitter: false, timeoutMs: 0 },
+        providerOptions: { pollIntervalMs: 0 },
+      });
+      expect(res.images).toHaveLength(1);
+      expect(posts).toBe(2); // first 503, retried once, then success
+    });
+
+    it('does NOT retry a 402 insufficient-credits submit error', async () => {
+      let posts = 0;
+      fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          posts++;
+          return Promise.resolve(jsonResponse({ detail: 'Insufficient credits' }, false, 402));
+        }
+        return Promise.resolve(imageResponse());
+      });
+      const provider = new BflProvider();
+      await expect(
+        provider.generate({
+          prompt: 'a fox',
+          retry: { maxRetries: 3, delayMs: 0, jitter: false, timeoutMs: 0 },
+        })
+      ).rejects.toThrow(GenerationFailedError);
+      expect(posts).toBe(1); // 402 is terminal — no retry, no extra charge
+    });
+
     it('returns the raw URL when returnUrls is set', async () => {
       wireHappyPath();
       const provider = new BflProvider();
