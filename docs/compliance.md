@@ -20,6 +20,7 @@ This means:
 | Provider | DPA | GDPR | EU Residency | DPA Document |
 |----------|-----|------|--------------|--------------|
 | **Google Cloud** | Yes | Yes | Yes | [CDPA](https://cloud.google.com/terms/data-processing-addendum) |
+| **Black Forest Labs (FLUX)** | Yes | Yes | Yes (EU endpoint) | [BFL Legal](https://bfl.ai/legal/terms-of-service) |
 | **Eden AI** | Yes | Varies* | Varies* | [Privacy Policy](https://www.edenai.co/privacy-policy) |
 | **IONOS** | Yes | Yes | Yes | [AGB](https://cloud.ionos.de/agb) |
 
@@ -87,6 +88,47 @@ const provider = new GoogleCloudTTIProvider({
 console.log(provider.isEURegion()); // true
 console.log(provider.getRegion()); // 'europe-west4'
 ```
+
+## Black Forest Labs (FLUX)
+
+### German Provider with EU Endpoint
+
+Black Forest Labs (BFL) is the creator of the FLUX image models, headquartered in
+Freiburg im Breisgau, Germany. The middleware integrates BFL via its dedicated
+**EU endpoint** (`api.eu.bfl.ai`), which routes inference and serves generated
+images from EU delivery endpoints (`delivery.eu*.bfl.ai`, e.g.
+`delivery.eu2.bfl.ai`) within EU regions.
+
+### Certifications
+
+- **SOC 2 Type II** — audited security, availability & confidentiality controls
+- **ISO 27001** — information security management
+- **GDPR-compliant data processing** as standard
+
+### EU Data Residency — Endpoint Matters
+
+EU data residency is **only** guaranteed via the EU endpoint:
+
+| Access path | EU data residency |
+|-------------|-------------------|
+| BFL direct, `api.eu.bfl.ai` (provider default) | **Yes** |
+| BFL direct, `api.bfl.ai` (global) / `api.us.bfl.ai` | No |
+| FLUX via Azure AI Foundry | No (Global Standard only, no EU data zone) |
+| FLUX via AWS Bedrock | No (primarily US regions; verify `eu-central-1` model access) |
+
+The provider defaults to `api.eu.bfl.ai` and logs a warning if a non-EU endpoint
+is configured via `BFL_API_URL`. Do not change it if EU residency is required.
+
+### Configuration for EU Compliance
+
+```typescript
+import { BflProvider } from '@loonylabs/tti-middleware';
+
+// Uses the EU endpoint by default (api.eu.bfl.ai)
+const provider = new BflProvider(); // reads BFL_API_KEY
+```
+
+**Document:** https://bfl.ai/legal/terms-of-service
 
 ## Eden AI
 

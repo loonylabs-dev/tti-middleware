@@ -13,6 +13,8 @@ export enum TTIProvider {
   EDENAI = 'edenai',
   /** IONOS Cloud. EXPERIMENTAL - limited testing. */
   IONOS = 'ionos',
+  /** Black Forest Labs (FLUX) - direct API via EU endpoint (api.eu.bfl.ai). GDPR/EU data residency. */
+  BFL = 'bfl',
 }
 
 // ============================================================

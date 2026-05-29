@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.14.0] - 2026-05-29
+
+### Added
+
+#### Black Forest Labs (FLUX) provider (`bfl`)
+
+New provider integrating the FLUX models directly via Black Forest Labs'
+**EU endpoint** (`api.eu.bfl.ai`) for GDPR-compliant EU data residency. BFL is
+a German company (Freiburg) holding SOC 2 Type II and ISO 27001; the EU endpoint
+keeps inference routing and image delivery within EU regions.
+
+**Why direct (not via Azure/Bedrock):** FLUX over Azure AI Foundry is Global
+Standard only (no EU data zone), and AWS Bedrock FLUX is primarily US-region —
+neither guarantees EU data residency. The direct EU endpoint does.
+
+**Models:**
+
+| Model ID | Description | Reference images |
+|----------|-------------|------------------|
+| `flux-1.1-pro` (default) | Fast text-to-image | – |
+| `flux-kontext-pro` | In-context editing + character consistency | 1 |
+| `flux-2-pro` | Text-to-image + multi-reference editing | up to 8 |
+
+**Key behaviors:**
+- **Asynchronous API**, fully encapsulated: submit (`POST /v1/{model}`) → poll
+  `polling_url` until `status: "Ready"` → resolve image. Callers use the normal
+  `generate()` flow.
+- **Delivery URLs expire after 10 minutes** → the provider downloads the image
+  and returns base64 by default. Set `providerOptions.returnUrls = true` to keep
+  the raw URL.
+- **No mask-based inpainting** (FLUX does not support it). Editing is prompt-based
+  via `referenceImages` (mapped to `input_image`, `input_image_2`, …).
+- `n > 1` fans out into `n` parallel submit→poll→download pipelines.
+- Auth via the `x-key` header. Configure with `BFL_API_KEY` / `BFL_API_URL`.
+- No extra peer dependencies (uses native `fetch`).
+
+### Changed
+- **Types**: Added `TTIProvider.BFL`.
+- **TTIService**: `parseProvider` now resolves `bfl`, `flux`, `blackforestlabs`.
+
+---
+
 ## [1.13.0] - 2026-05-28
 
 ### Changed

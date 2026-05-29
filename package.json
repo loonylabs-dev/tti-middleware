@@ -1,7 +1,7 @@
 {
   "name": "@loonylabs/tti-middleware",
-  "version": "1.13.0",
-  "description": "Provider-agnostic Text-to-Image middleware with GDPR compliance. Supports Google Cloud (Imagen, Gemini), Eden AI, and IONOS.",
+  "version": "1.14.0",
+  "description": "Provider-agnostic Text-to-Image middleware with GDPR compliance. Supports Google Cloud (Imagen, Gemini), Black Forest Labs (FLUX), Eden AI, and IONOS.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -21,6 +21,7 @@
     "test:live": "TTI_INTEGRATION_TESTS=true jest tests/integration/*.integration.test.ts --testTimeout=120000",
     "test:manual": "ts-node scripts/manual-test-edenai.ts",
     "test:manual:google-cloud": "ts-node scripts/manual-test-google-cloud.ts",
+    "test:manual:bfl": "ts-node tests/manual/bfl-live-test.ts",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "clean": "node -e \"const fs=require('fs');if(fs.existsSync('dist'))fs.rmSync('dist',{recursive:true})\"",
@@ -36,6 +37,8 @@
     "google-cloud",
     "gemini",
     "imagen",
+    "flux",
+    "black-forest-labs",
     "middleware",
     "provider-agnostic",
     "typescript",
