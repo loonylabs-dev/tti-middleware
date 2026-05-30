@@ -247,18 +247,27 @@ FLUX models via the **EU endpoint** (`api.eu.bfl.ai`) for GDPR / EU data residen
 - The provider is **asynchronous** under the hood (submit → poll → download) but exposed through the normal `generate()` flow.
 - Delivery URLs **expire after 10 minutes** — the provider downloads and returns base64 by default. Set `providerOptions.returnUrls = true` to keep the raw URL.
 - FLUX does **not** support mask-based inpainting; editing is prompt-based via `referenceImages`.
+- **Reference images are generic.** The same `referenceImages` field drives both **character consistency** (*"keep the character from the reference"*) and **style transfer** (*"a new subject in the same art style as the reference"*) — the prompt decides which. No separate field or model is needed.
+- **Same two modes as Google Cloud**: provide `subjectDescription` for *structured mode* (the middleware adds the consistency template), or omit it for *index-based mode* (your prompt is sent verbatim).
 - Why direct (not Azure/Bedrock): FLUX over Azure is Global Standard only (no EU data zone), and Bedrock FLUX is primarily US-region — only the BFL EU endpoint guarantees EU data residency.
 
 ```typescript
 service.registerProvider(new BflProvider()); // reads BFL_API_KEY
 
-// Edit / character consistency with FLUX.1 Kontext
+// Character consistency with FLUX.1 Kontext (index-based mode)
 const edited = await service.generate({
   model: 'flux-kontext-pro',
   prompt: 'Change the background to a sunny park, keep the character identical',
   referenceImages: [{ base64: characterBase64 }],
   aspectRatio: '1:1',
   providerOptions: { outputFormat: 'png' },
+}, TTIProvider.BFL);
+
+// Style transfer — SAME mechanism, the prompt asks for the style not the subject
+const styled = await service.generate({
+  model: 'flux-kontext-pro',
+  prompt: 'A coffee cup and a book, in the exact same art style as the reference image',
+  referenceImages: [{ base64: styleReferenceBase64 }],
 }, TTIProvider.BFL);
 ```
 
@@ -349,7 +358,7 @@ const duelScene = await service.generate({
 | **Structured** | Required | Single character across scenes |
 | **Index-Based** | Omitted | Multiple characters in one scene |
 
-- Model must be `gemini-flash-image` (only model supporting character consistency)
+- For Google Cloud, the model must be `gemini-flash-image`. The BFL provider also supports both modes on `flux-kontext-pro` / `flux-2-pro` (see [Black Forest Labs](#black-forest-labs-flux)).
 
 ## Inpainting / Image Editing
 

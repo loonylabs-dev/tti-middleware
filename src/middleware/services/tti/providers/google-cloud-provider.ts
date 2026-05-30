@@ -981,18 +981,8 @@ export class GoogleCloudTTIProvider extends BaseTTIProvider {
     };
   }
 
-  private buildCharacterConsistencyPrompt(
-    userPrompt: string,
-    subjectDescription: string,
-    referenceCount: number
-  ): string {
-    const referenceText =
-      referenceCount === 1 ? 'the reference image' : `the ${referenceCount} reference images`;
-
-    return `Using ${referenceText} as a reference for the subject "${subjectDescription}", generate a new image where: ${userPrompt}
-
-IMPORTANT: Maintain exact visual consistency with the subject in the reference - same style, colors, proportions, and distinctive features. The subject should be immediately recognizable as the same one from the reference.`;
-  }
+  // buildCharacterConsistencyPrompt is inherited from BaseTTIProvider
+  // (shared with the BFL provider for identical structured-mode behavior).
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private processGeminiResponse(response: any, modelId: string, duration: number): TTIResponse {

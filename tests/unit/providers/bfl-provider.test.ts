@@ -310,6 +310,42 @@ describe('BflProvider', () => {
       expect(body.input_image_2).toBe('BBB');
     });
 
+    it('structured mode: wraps prompt with consistency template when subjectDescription is set', async () => {
+      wireHappyPath();
+      const provider = new BflProvider();
+      await provider.generate(
+        fast({
+          prompt: 'dancing in the rain',
+          model: 'flux-kontext-pro',
+          referenceImages: [{ base64: 'AAA' }],
+          subjectDescription: 'cute cartoon bear with red hat',
+        })
+      );
+
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      // Same template the Google provider produces (shared base-class method).
+      expect(body.prompt).toContain('cute cartoon bear with red hat');
+      expect(body.prompt).toContain('the reference image');
+      expect(body.prompt).toContain('dancing in the rain');
+      expect(body.prompt).toContain('Maintain exact visual consistency');
+    });
+
+    it('index-based mode: passes prompt verbatim when subjectDescription is omitted', async () => {
+      wireHappyPath();
+      const provider = new BflProvider();
+      await provider.generate(
+        fast({
+          prompt: 'The bear from the reference image, dancing in the rain',
+          model: 'flux-kontext-pro',
+          referenceImages: [{ base64: 'AAA' }],
+          // subjectDescription intentionally omitted
+        })
+      );
+
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.prompt).toBe('The bear from the reference image, dancing in the rain');
+    });
+
     it('passes aspect_ratio for kontext but width/height for 1.1-pro', async () => {
       wireHappyPath();
       const provider = new BflProvider();

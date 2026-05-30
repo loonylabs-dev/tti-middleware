@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.14.1] - 2026-05-30
+
+### Fixed
+- **BFL structured mode**: The `bfl` provider now honors `subjectDescription`
+  (structured character-consistency mode) identically to the Google Cloud
+  provider. Previously BFL silently ignored `subjectDescription`, so the same
+  request produced different behavior across providers. With a
+  `subjectDescription` + reference images, BFL now wraps the prompt with the
+  shared consistency template; without it, the prompt passes through verbatim
+  (index-based mode) — same as before.
+
+### Changed
+- **Refactor**: Moved `buildCharacterConsistencyPrompt` into `BaseTTIProvider`
+  (single source of truth) so Google Cloud and BFL produce identical
+  structured-mode prompts. No behavior change for Google Cloud.
+
+### Notes
+- **Style reference images**: Verified that BFL reference images work for
+  *style transfer* as well as character consistency — both use the same
+  `referenceImages` mechanism; only the prompt differs (ask for the style vs.
+  the subject). No separate field or model is required.
+
+---
+
 ## [1.14.0] - 2026-05-29
 
 ### Added
