@@ -421,14 +421,31 @@ export class BflProvider extends BaseTTIProvider {
    * - flux-1.1-pro / flux-2-pro: width/height derived from aspectRatio
    * - flux-kontext-pro: aspect_ratio passed through as a string
    * - reference images map to input_image, input_image_2, ...
+   * - subjectDescription (structured mode) wraps the prompt with the shared
+   *   character-consistency template — identical to the Google Cloud provider
    * - providerOptions act as an escape hatch and override derived fields
    */
   private buildRequestBody(request: TTIRequest, modelId: string): Record<string, unknown> {
     const opts = request.providerOptions || {};
     const outputFormat = (opts.outputFormat as string) || 'jpeg';
 
+    const refs = request.referenceImages || [];
+
+    // Structured mode: if a subjectDescription is given alongside reference
+    // images, enrich the prompt with the shared consistency template (same
+    // behavior as Google Cloud). Without it, the prompt is passed through
+    // verbatim (index-based mode).
+    const prompt =
+      request.subjectDescription && refs.length > 0
+        ? this.buildCharacterConsistencyPrompt(
+            request.prompt,
+            request.subjectDescription,
+            refs.length
+          )
+        : request.prompt;
+
     const body: Record<string, unknown> = {
-      prompt: request.prompt,
+      prompt,
       output_format: outputFormat,
     };
 
@@ -443,7 +460,6 @@ export class BflProvider extends BaseTTIProvider {
     }
 
     // Reference images (character consistency / prompt-based editing).
-    const refs = request.referenceImages || [];
     refs.forEach((ref, index) => {
       const key = index === 0 ? 'input_image' : `input_image_${index + 1}`;
       body[key] = ref.base64;

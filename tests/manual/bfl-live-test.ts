@@ -12,9 +12,17 @@
  *   t2i-flux2        FLUX.2 [pro] text-to-image, small      (~1 credit @ 512px)
  *   aspect           FLUX1.1 [pro] 16:9 aspect ratio        (~4 credits)
  *   kontext          FLUX.1 Kontext [pro] edit w/ reference (~4 credits)
+ *   style            FLUX.1 Kontext [pro] STYLE reference   (~4 credits)
+ *   structured       FLUX.1 Kontext [pro] subjectDescription(~4 credits)
  *   flux2-multiref   FLUX.2 [pro] multi-reference editing   (~5 credits)
+ *   combo-pencil     FLUX.2 robot+cat in pencil-sketch style (~3 credits)*
+ *   combo-pixel      FLUX.2 robot+cat in pixel-art style     (~3 credits)*
  *   urls             returnUrls=true (no download), flux2    (~1 credit)
  *   all              run every step (~19 credits)
+ *
+ * *combo-* steps require user-supplied style refs in the output dir
+ *  (pencil-sketch.png, pixel-art.png) plus the robot/cat refs from
+ *  t2i-flux11 / t2i-flux2. They are NOT part of `all`.
  *
  * The reference-image steps reuse images produced by earlier steps, so run
  * `t2i-flux11` (and `t2i-flux2`) before `kontext` / `flux2-multiref`, or just
@@ -56,6 +64,12 @@ function loadBase64(name: string): string | null {
   return null;
 }
 
+/** Load an exact filename from the output dir as base64 (for user-supplied refs). */
+function loadFile(filename: string): string | null {
+  const p = path.join(OUT_DIR, filename);
+  return fs.existsSync(p) ? fs.readFileSync(p).toString('base64') : null;
+}
+
 async function run(label: string, req: TTIRequest, provider: BflProvider, saveName: string) {
   console.log(`\n=== ${label} ===`);
   console.log(`    model=${req.model} prompt="${req.prompt.slice(0, 60)}..."`);
@@ -81,7 +95,7 @@ async function main() {
   ensureOutDir();
   const args = process.argv.slice(2);
   const steps = args.includes('all')
-    ? ['t2i-flux11', 't2i-flux2', 'aspect', 'kontext', 'flux2-multiref', 'urls']
+    ? ['t2i-flux11', 't2i-flux2', 'aspect', 'kontext', 'style', 'structured', 'flux2-multiref', 'urls']
     : args;
 
   if (steps.length === 0) {
@@ -157,6 +171,99 @@ async function main() {
           },
           provider,
           'kontext-edit'
+        );
+        break;
+      }
+
+      case 'style': {
+        // Style transfer: SAME mechanism as character consistency (one ref
+        // image), but the PROMPT asks for the style, not the subject. The
+        // output should be a NEW motif in the reference's art style.
+        const ref = loadBase64('flux11-t2i');
+        if (!ref) {
+          console.log('\n=== Style transfer — SKIPPED (run t2i-flux11 first to create a reference) ===');
+          results[step] = false;
+          break;
+        }
+        results[step] = await run(
+          'FLUX.1 Kontext [pro] — STYLE reference (new subject, same art style)',
+          {
+            model: 'flux-kontext-pro',
+            prompt:
+              'A coffee cup and an open book on a table, in the exact same flat ' +
+              'vector illustration art style as the reference image — same clean ' +
+              'lines, shading and color palette. Do NOT include the robot.',
+            referenceImages: [{ base64: ref }],
+            aspectRatio: '1:1',
+            retry: false,
+          },
+          provider,
+          'style-transfer'
+        );
+        break;
+      }
+
+      case 'structured': {
+        // Structured mode: subjectDescription drives the shared consistency
+        // template (unified with the Google provider).
+        const ref = loadBase64('flux11-t2i');
+        if (!ref) {
+          console.log('\n=== Structured mode — SKIPPED (run t2i-flux11 first) ===');
+          results[step] = false;
+          break;
+        }
+        results[step] = await run(
+          'FLUX.1 Kontext [pro] — structured mode (subjectDescription)',
+          {
+            model: 'flux-kontext-pro',
+            prompt: 'sitting at a desk and reading a book',
+            referenceImages: [{ base64: ref }],
+            subjectDescription: 'cute white robot mascot with two antennas',
+            aspectRatio: '1:1',
+            retry: false,
+          },
+          provider,
+          'structured-mode'
+        );
+        break;
+      }
+
+      case 'combo-pencil':
+      case 'combo-pixel': {
+        // Characters + style at once: robot + cat as character refs, plus a
+        // style reference. Demonstrates that referenceImages mix freely —
+        // the prompt assigns roles (which image is a character, which is style).
+        const robot = loadBase64('flux11-t2i');
+        const cat = loadBase64('flux2-t2i');
+        const styleFile = step === 'combo-pencil' ? 'pencil-sketch.png' : 'pixel-art.png';
+        const styleName = step === 'combo-pencil' ? 'pencil sketch / hand-drawn black-and-white line art' : '16-bit pixel art';
+        const style = loadFile(styleFile);
+        if (!robot || !cat) {
+          console.log(`\n=== ${step} — SKIPPED (run t2i-flux11 and t2i-flux2 first) ===`);
+          results[step] = false;
+          break;
+        }
+        if (!style) {
+          console.log(`\n=== ${step} — SKIPPED (missing ${styleFile} in output dir) ===`);
+          results[step] = false;
+          break;
+        }
+        results[step] = await run(
+          `FLUX.2 [pro] — characters + ${styleName} style (3 refs)`,
+          {
+            model: 'flux-2-pro',
+            prompt:
+              'Create one scene with two characters sitting side by side: the white ' +
+              'robot from the FIRST reference image and the orange cat from the SECOND ' +
+              'reference image. Render the ENTIRE image in the exact art style of the ' +
+              `THIRD reference image (${styleName}). Keep the robot and the cat clearly ` +
+              'recognizable, but fully redrawn in that style.',
+            referenceImages: [{ base64: robot }, { base64: cat }, { base64: style }],
+            retry: false,
+            providerOptions: { width: 768, height: 768 },
+          },
+          provider,
+          step
         );
         break;
       }

@@ -262,6 +262,30 @@ export abstract class BaseTTIProvider implements ITTIProvider {
   }
 
   /**
+   * Build a "structured mode" character-consistency prompt.
+   *
+   * This wraps the caller's prompt with an explicit instruction to keep the
+   * subject visually consistent with the reference image(s). It is a
+   * middleware-level convenience — providers ultimately receive only images +
+   * this text. Used when the request provides `subjectDescription`.
+   *
+   * Shared across providers so Google Cloud and BFL produce identical
+   * structured-mode prompts (single source of truth).
+   */
+  protected buildCharacterConsistencyPrompt(
+    userPrompt: string,
+    subjectDescription: string,
+    referenceCount: number
+  ): string {
+    const referenceText =
+      referenceCount === 1 ? 'the reference image' : `the ${referenceCount} reference images`;
+
+    return `Using ${referenceText} as a reference for the subject "${subjectDescription}", generate a new image where: ${userPrompt}
+
+IMPORTANT: Maintain exact visual consistency with the subject in the reference - same style, colors, proportions, and distinctive features. The subject should be immediately recognizable as the same one from the reference.`;
+  }
+
+  /**
    * Validate that the request is valid
    */
   protected validateRequest(request: TTIRequest): void {
