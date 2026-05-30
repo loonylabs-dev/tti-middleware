@@ -360,6 +360,26 @@ const duelScene = await service.generate({
 
 - For Google Cloud, the model must be `gemini-flash-image`. The BFL provider also supports both modes on `flux-kontext-pro` / `flux-2-pro` (see [Black Forest Labs](#black-forest-labs-flux)).
 
+### Style Reference (vs. Character)
+
+Reference images are **generic** — the same `referenceImages` field drives both *character consistency* and *style transfer*. **The prompt decides the role**, there is no separate style field or mode:
+
+```typescript
+// CHARACTER: keep the subject, change the scene
+{ prompt: 'The character from the reference image, now in a park', referenceImages: [{ base64: ref }] }
+
+// STYLE: new subject, adopt the reference's art style
+{ prompt: 'A coffee cup and a book, in the exact art style of the reference image', referenceImages: [{ base64: ref }] }
+
+// MIXED (FLUX.2, multi-reference): characters + a style ref in one request
+{
+  prompt: 'The robot (FIRST image) and cat (SECOND image) together, rendered in the pixel-art style of the THIRD image',
+  referenceImages: [{ base64: robot }, { base64: cat }, { base64: styleRef }],
+}
+```
+
+> **Note:** Unlike character consistency, style transfer has **no** structured-mode shortcut (no `styleDescription`). It is always prompt-driven. A future `role` field per reference image (to unify character/style/mixed) is tracked in the [roadmap](docs/roadmap.md).
+
 ## Inpainting / Image Editing
 
 The `imagen-capability` model supports mask-based inpainting via Vertex AI. This is the **only** model that supports pixel-precise editing with a mask image.
@@ -700,6 +720,7 @@ TTI_INTEGRATION_TESTS=true npm run test:integration
 - [Google Cloud Provider](docs/providers/google-cloud.md) - Imagen 3 & Gemini Flash Image
 - [GDPR/Compliance](docs/compliance.md) - Data processing agreements
 - [Testing Guide](docs/testing.md) - Unit & integration tests
+- [Roadmap](docs/roadmap.md) - Deferred features & backlog
 - [CHANGELOG](CHANGELOG.md) - Release notes
 
 ## Contributing
