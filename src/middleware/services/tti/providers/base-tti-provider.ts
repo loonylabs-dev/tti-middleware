@@ -286,6 +286,26 @@ IMPORTANT: Maintain exact visual consistency with the subject in the reference -
   }
 
   /**
+   * Map an aspect ratio to concrete FLUX pixel dimensions (width/height).
+   *
+   * Shared by the FLUX-based providers (BFL direct + Azure Foundry) so both
+   * derive identical dimensions from a given aspect ratio (single source of
+   * truth). Unknown ratios fall back to 1024×1024.
+   */
+  protected aspectRatioToDimensions(aspectRatio?: string): { width: number; height: number } {
+    const mapping: Record<string, { width: number; height: number }> = {
+      '1:1': { width: 1024, height: 1024 },
+      '16:9': { width: 1344, height: 768 },
+      '9:16': { width: 768, height: 1344 },
+      '4:3': { width: 1152, height: 896 },
+      '3:4': { width: 896, height: 1152 },
+      '3:2': { width: 1216, height: 832 },
+      '2:3': { width: 832, height: 1216 },
+    };
+    return mapping[aspectRatio || '1:1'] || { width: 1024, height: 1024 };
+  }
+
+  /**
    * Validate that the request is valid
    */
   protected validateRequest(request: TTIRequest): void {

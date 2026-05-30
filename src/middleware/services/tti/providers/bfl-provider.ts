@@ -481,18 +481,4 @@ export class BflProvider extends BaseTTIProvider {
 
     return body;
   }
-
-  /** Map an aspect ratio to concrete pixel dimensions (BFL width/height). */
-  private aspectRatioToDimensions(aspectRatio?: string): { width: number; height: number } {
-    const mapping: Record<string, { width: number; height: number }> = {
-      '1:1': { width: 1024, height: 1024 },
-      '16:9': { width: 1344, height: 768 },
-      '9:16': { width: 768, height: 1344 },
-      '4:3': { width: 1152, height: 896 },
-      '3:4': { width: 896, height: 1152 },
-      '3:2': { width: 1216, height: 832 },
-      '2:3': { width: 832, height: 1216 },
-    };
-    return mapping[aspectRatio || '1:1'] || { width: 1024, height: 1024 };
-  }
 }

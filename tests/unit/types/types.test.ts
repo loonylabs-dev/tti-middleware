@@ -25,11 +25,12 @@ describe('TTIProvider enum', () => {
     expect(TTIProvider.EDENAI).toBe('edenai');
     expect(TTIProvider.IONOS).toBe('ionos');
     expect(TTIProvider.BFL).toBe('bfl');
+    expect(TTIProvider.AZURE_FOUNDRY).toBe('azure-foundry');
   });
 
-  it('should have exactly 4 providers', () => {
+  it('should have exactly 5 providers', () => {
     const providers = Object.values(TTIProvider);
-    expect(providers).toHaveLength(4);
+    expect(providers).toHaveLength(5);
   });
 });
 

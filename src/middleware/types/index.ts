@@ -15,6 +15,15 @@ export enum TTIProvider {
   IONOS = 'ionos',
   /** Black Forest Labs (FLUX) - direct API via EU endpoint (api.eu.bfl.ai). GDPR/EU data residency. */
   BFL = 'bfl',
+  /**
+   * Microsoft Foundry (Azure) - FLUX models served by Azure via the BFL
+   * provider-specific API. EU data residency through a `DataZoneStandard`
+   * deployment in an EU region; processing is governed by the Microsoft
+   * Products and Services DPA (Art. 28) — prompts/outputs are NOT shared with
+   * Black Forest Labs and are NOT used for training. RECOMMENDED for EU/GDPR
+   * when a no-training contractual guarantee is required.
+   */
+  AZURE_FOUNDRY = 'azure-foundry',
 }
 
 // ============================================================

@@ -6,3 +6,4 @@ export * from './google-cloud-provider';
 export * from './edenai-provider';
 export * from './ionos-provider';
 export * from './bfl-provider';
+export * from './azure-foundry-provider';

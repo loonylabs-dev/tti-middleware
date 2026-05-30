@@ -2,7 +2,7 @@
 
 # TTI Middleware
 
-*Provider-agnostic Text-to-Image middleware with **GDPR compliance** and **character consistency** support. Currently supports Google Cloud (Imagen 3, Imagen 4, Gemini Flash Image, Gemini 3 Pro Image), Black Forest Labs (FLUX), Eden AI, and IONOS. Features EU data residency (Vertex AI + the BFL EU endpoint), automatic region fallback, retry logic, and comprehensive error handling.*
+*Provider-agnostic Text-to-Image middleware with **GDPR compliance** and **character consistency** support. Currently supports Google Cloud (Imagen 3, Imagen 4, Gemini Flash Image, Gemini 3 Pro Image), Black Forest Labs (FLUX), Microsoft Foundry (Azure FLUX), Eden AI, and IONOS. Features EU data residency (Vertex AI, the BFL EU endpoint, and Azure DataZoneStandard EU), automatic region fallback, retry logic, and comprehensive error handling.*
 
 <!-- Horizontal Badge Navigation Bar -->
 [![npm version](https://img.shields.io/npm/v/@loonylabs/tti-middleware.svg?style=for-the-badge&logo=npm&logoColor=white)](https://www.npmjs.com/package/@loonylabs/tti-middleware)
@@ -43,6 +43,7 @@
 - **Multi-Provider Architecture**: Unified API for all TTI providers
   - **Google Cloud** (Recommended): Imagen 3, Imagen 4, Gemini Flash Image & Gemini 3 Pro Image with EU data residency
   - **Black Forest Labs (FLUX)**: FLUX1.1 pro, FLUX.1 Kontext pro, FLUX.2 pro via the EU endpoint (GDPR / EU data residency)
+  - **Microsoft Foundry (Azure FLUX)**: the same FLUX models served by Azure — EU data residency via a `DataZoneStandard` EU deployment + the Microsoft DPA (no training)
   - **Eden AI**: Aggregator with access to OpenAI, Stability AI, Replicate (experimental)
   - **IONOS**: German cloud provider with OpenAI-compatible API (experimental)
 - **Character Consistency**: Generate consistent characters across multiple images (perfect for children's book illustrations)
@@ -157,6 +158,12 @@ const fluxResult = await service.generate({
   model: 'flux-1.1-pro',
 }, TTIProvider.BFL);
 
+// Use Microsoft Foundry / FLUX (Azure DataZoneStandard EU, Microsoft DPA)
+const foundryResult = await service.generate({
+  prompt: 'A mountain landscape',
+  model: 'flux-2-pro-azure',
+}, TTIProvider.AZURE_FOUNDRY);
+
 // Use IONOS (experimental)
 const ionosResult = await service.generate({
   prompt: 'A mountain landscape',
@@ -204,6 +211,11 @@ GOOGLE_CLOUD_REGION=europe-west4  # Recommended for Gemini
 BFL_API_KEY=your-api-key
 BFL_API_URL=https://api.eu.bfl.ai  # Default; do not change if EU residency is required
 
+# Microsoft Foundry / FLUX (Azure) — EU residency via a DataZoneStandard EU deployment
+AZURE_FOUNDRY_ENDPOINT=https://your-resource.services.ai.azure.com
+AZURE_FOUNDRY_API_KEY=your-api-key
+# AZURE_FOUNDRY_API_VERSION=preview  # optional, default: preview
+
 # Eden AI (experimental)
 EDENAI_API_KEY=your-api-key
 
@@ -249,7 +261,7 @@ FLUX models via the **EU endpoint** (`api.eu.bfl.ai`) for GDPR / EU data residen
 - FLUX does **not** support mask-based inpainting; editing is prompt-based via `referenceImages`.
 - **Reference images are generic.** The same `referenceImages` field drives both **character consistency** (*"keep the character from the reference"*) and **style transfer** (*"a new subject in the same art style as the reference"*) — the prompt decides which. No separate field or model is needed.
 - **Same two modes as Google Cloud**: provide `subjectDescription` for *structured mode* (the middleware adds the consistency template), or omit it for *index-based mode* (your prompt is sent verbatim).
-- Why direct (not Azure/Bedrock): FLUX over Azure is Global Standard only (no EU data zone), and Bedrock FLUX is primarily US-region — only the BFL EU endpoint guarantees EU data residency.
+- Direct BFL vs. Azure Foundry: the **BFL EU endpoint** gives EU residency out of the box, but BFL's standard API terms permit training on inputs/outputs (a no-training guarantee requires a BFL enterprise/DPA agreement). **Microsoft Foundry** (see below) serves the same FLUX models with a `DataZoneStandard` EU deployment + the Microsoft DPA, which contractually excludes training — at the cost of building the Azure deployment. Pick BFL-direct for the simplest EU path, Azure Foundry when you need the no-training contract. (AWS Bedrock FLUX is primarily US-region — not used here.)
 
 ```typescript
 service.registerProvider(new BflProvider()); // reads BFL_API_KEY
@@ -269,6 +281,38 @@ const styled = await service.generate({
   prompt: 'A coffee cup and a book, in the exact same art style as the reference image',
   referenceImages: [{ base64: styleReferenceBase64 }],
 }, TTIProvider.BFL);
+```
+
+### Microsoft Foundry (Azure FLUX)
+
+The same FLUX models served by **Microsoft Foundry** via the BFL provider-specific API. Unlike the direct BFL API, the Foundry route is **synchronous** (one POST returns the image inline as `b64_json`, no polling, no expiring URL). Processing is governed by the **Microsoft Products and Services DPA** (Art. 28) — inputs/outputs are **not** shared with BFL and **not** used for training.
+
+| Model | ID | Character Consistency / Editing | Reference Images | Endpoint path |
+|-------|-----|--------------------------------|------------------|---------------|
+| **FLUX.2 [pro]** | `flux-2-pro-azure` (default) | **Yes** (multi-reference) | up to 8 | `flux-2-pro` |
+| **FLUX1.1 [pro]** | `flux-1.1-pro-azure` | No | – | `flux-pro-1.1` |
+| **FLUX.1 Kontext [pro]** | `flux-kontext-pro-azure` | **Yes** (prompt-based, via reference) | 1 | `flux-kontext-pro` |
+| **FLUX.2 [flex]** | `flux-2-flex-azure` | **Yes** (multi-reference) | up to 10 | `flux-2-flex` (registration required) |
+
+**Important:**
+- **EU data residency is a *deployment* property, not a client setting.** Deploy the model as **`DataZoneStandard` in an EU region** (e.g. `germanywestcentral`); processing then stays within the EU Data Boundary. A `Global Standard` deployment does **not** guarantee EU residency. The provider cannot enforce this — choose the right deployment SKU.
+- Model ids are suffixed `-azure` so they never collide with the direct-BFL ids when both providers are registered in one service.
+- Same two prompt modes as the other providers (`subjectDescription` → structured, omit → index-based). Reference images map to `input_image`, `input_image_2`, … (2-pro up to 8, flex up to 10, kontext 1).
+- **No double-billing on timeout:** the POST *is* the billed generation (not idempotent), so the provider forces `timeoutRetries: 0` — a timeout fails instead of re-submitting. Transient `429`/`5xx`/network errors (no image produced) are still retried. An explicit caller `timeoutRetries` is respected.
+- `num_images` is clamped to the model's `maxImagesPerRequest` (1 for all current models); `n > 1` per request is not supported and is truncated with a warning.
+- `FLUX.2 [flex]` requires a separate Microsoft registration/approval before it can be deployed.
+
+```typescript
+import { AzureFoundryProvider } from '@loonylabs/tti-middleware';
+
+// reads AZURE_FOUNDRY_ENDPOINT + AZURE_FOUNDRY_API_KEY, or pass explicitly
+service.registerProvider(new AzureFoundryProvider());
+
+const image = await service.generate({
+  model: 'flux-2-pro-azure',
+  prompt: 'A cute robot mascot waving, flat vector illustration',
+  aspectRatio: '1:1',
+}, TTIProvider.AZURE_FOUNDRY);
 ```
 
 ### Eden AI (Experimental)
@@ -419,12 +463,15 @@ const result = await service.generate({
 |----------|-----|------|-------------------|----------|
 | **Google Cloud** | Yes | Yes | Yes | [CDPA](https://cloud.google.com/terms/data-processing-addendum) |
 | **Black Forest Labs (FLUX)** | Yes | Yes | Yes (EU endpoint) | [BFL Legal](https://bfl.ai/legal/terms-of-service) |
+| **Microsoft Foundry (Azure FLUX)** | Yes (MS DPA) | Yes | Yes (DataZoneStandard EU) | [Microsoft DPA](https://aka.ms/DPA) |
 | **Eden AI** | Yes | Depends* | Depends* | [Privacy Policy](https://www.edenai.co/privacy-policy) |
 | **IONOS** | Yes | Yes | Yes | [AGB](https://cloud.ionos.de/agb) |
 
 *Eden AI is an aggregator - compliance depends on the underlying provider.
 
-**Black Forest Labs:** EU data residency requires the EU endpoint (`api.eu.bfl.ai`, the provider default). Holds SOC 2 Type II and ISO 27001. Note that FLUX accessed via Azure AI Foundry (Global Standard only) or AWS Bedrock (primarily US-region) does **not** guarantee EU data residency.
+**Black Forest Labs:** EU data residency requires the EU endpoint (`api.eu.bfl.ai`, the provider default). Holds SOC 2 Type II and ISO 27001. Note that BFL's standard API terms permit training on inputs/outputs — a no-training guarantee requires a BFL enterprise/DPA agreement.
+
+**Microsoft Foundry (Azure FLUX):** the same FLUX models, but processing is governed by the **Microsoft Products and Services DPA** (Art. 28) — no sharing with BFL, **no training**. EU residency requires a **`DataZoneStandard` deployment in an EU region** (verified for FLUX.2 [pro] in `germanywestcentral`); a `Global Standard` deployment does not guarantee EU residency. (AWS Bedrock FLUX is primarily US-region and is not supported by this middleware.)
 
 ### Google Cloud Data Usage
 
@@ -699,6 +746,10 @@ npm run test:manual:google-cloud
 # BFL / FLUX live test (real API, spends credits) — run selected steps
 npx ts-node tests/manual/bfl-live-test.ts t2i-flux11      # single step
 npx ts-node tests/manual/bfl-live-test.ts all             # full coverage
+
+# Azure Foundry / FLUX live test (real API, spends Azure quota)
+npm run test:manual:azure-foundry t2i                     # single step
+npm run test:manual:azure-foundry all                     # t2i + aspect + multiref
 ```
 
 ### Integration Tests

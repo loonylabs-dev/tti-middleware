@@ -54,6 +54,12 @@ export class TTIService {
       blackforestlabs: TTIProvider.BFL,
       black_forest_labs: TTIProvider.BFL,
       flux: TTIProvider.BFL,
+      // Microsoft Foundry (Azure) — FLUX served by Azure
+      'azure-foundry': TTIProvider.AZURE_FOUNDRY,
+      azure_foundry: TTIProvider.AZURE_FOUNDRY,
+      azurefoundry: TTIProvider.AZURE_FOUNDRY,
+      foundry: TTIProvider.AZURE_FOUNDRY,
+      'azure-flux': TTIProvider.AZURE_FOUNDRY,
     };
     return providerMap[normalized] || null;
   }
